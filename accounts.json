@@ -22,6 +22,29 @@
         "telegram_username": "",
         "last_active": "2025-01-27T15:30:00.000000"
     },
+    "8417122896": {
+        "accounts": [
+            {
+                "id": 1,
+                "custom_name": "Canada 🇨🇦 ",
+                "username": "JisanCA",
+                "password": "JisanCA",
+                "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJndWxpLXVzZXIiLCJpYXQiOjE3Njc3OTM1OTEsImV4cCI6MTc2NzgxODYyNCwiaWQiOiIyMDA2OTA3MDkyMzc2NDczNjAyIiwibmlja25hbWUiOiJSYWtpYnVsQk4ifQ.id1V0-5Mx-yKc8PBchCSIGHW-7GQt984GtCGxvPxcl8",
+                "api_user_id": "2006907092376473602",
+                "nickname": "JisanCA",
+                "last_login": "2026-01-07T07:47:27.226821",
+                "active": true,
+                "default": true,
+                "added_by": 5624278091,
+                "added_at": "2025-01-27T15:30:00.000000",
+                "telegram_username": "",
+                "friends": []
+            }
+        ],
+        "selected_account_id": 1,
+        "telegram_username": "",
+        "last_active": "2025-01-27T15:30:00.000000"
+    },
     "7945687680": {
         "accounts": [
             {
@@ -361,6 +384,11 @@
                         "telegram_username": ""
                     },
                     {
+                        "user_id": "8417122896",
+                        "name": "JisanCA",
+                        "telegram_username": ""
+                    },
+                    {
                         "user_id": "5988324432",
                         "name": "Rafiq3CA",
                         "telegram_username": ""
@@ -521,6 +549,35 @@
                 "api_user_id": "1997269910992965633",
                 "nickname": "AfridiCA",
                 "last_login": "2026-01-07T07:46:57.425708",
+                "active": true,
+                "default": true,
+                "added_by": 5624278091,
+                "added_at": "2025-01-27T15:30:00.000000",
+                "telegram_username": "",
+                "friends": [
+                    {
+                        "user_id": "6401447401",
+                        "name": "TeamAfridiCA",
+                        "telegram_username": ""
+                }
+                ]
+            }
+        ],
+        "selected_account_id": 1,
+        "telegram_username": "",
+        "last_active": "2025-01-27T15:30:00.000000"
+    },
+    "6401447401": {
+        "accounts": [
+            {
+                "id": 1,
+                "custom_name": "Canada 🇨🇦 ",
+                "username": "TeamAfridiCA",
+                "password": "TeamAfridiCA",
+                "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJndWxpLXVzZXIiLCJpYXQiOjE3Njc3OTM1OTEsImV4cCI6MTc2NzgxODYyNCwiaWQiOiIyMDA2OTA3MDkyMzc2NDczNjAyIiwibmlja25hbWUiOiJSYWtpYnVsQk4ifQ.id1V0-5Mx-yKc8PBchCSIGHW-7GQt984GtCGxvPxcl8",
+                "api_user_id": "2006907092376473602",
+                "nickname": "TeamAfridiCA",
+                "last_login": "2026-01-07T07:47:27.226821",
                 "active": true,
                 "default": true,
                 "added_by": 5624278091,
@@ -1204,6 +1261,29 @@
                 "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJndWxpLXVzZXIiLCJpYXQiOjE3Njc3OTM1OTEsImV4cCI6MTc2NzgxODYyNCwiaWQiOiIyMDA2OTA3MDkyMzc2NDczNjAyIiwibmlja25hbWUiOiJSYWtpYnVsQk4ifQ.id1V0-5Mx-yKc8PBchCSIGHW-7GQt984GtCGxvPxcl8",
                 "api_user_id": "2006907092376473602",
                 "nickname": "RakibulBN",
+                "last_login": "2026-01-07T07:47:27.226821",
+                "active": true,
+                "default": true,
+                "added_by": 5624278091,
+                "added_at": "2025-01-27T15:30:00.000000",
+                "telegram_username": "",
+                "friends": []
+            }
+        ],
+        "selected_account_id": 1,
+        "telegram_username": "",
+        "last_active": "2025-01-27T15:30:00.000000"
+    },
+    "8269196421": {
+        "accounts": [
+            {
+                "id": 1,
+                "custom_name": "Canada 🇨🇦 ",
+                "username": "HridoyCA",
+                "password": "HridoyCA",
+                "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJndWxpLXVzZXIiLCJpYXQiOjE3Njc3OTM1OTEsImV4cCI6MTc2NzgxODYyNCwiaWQiOiIyMDA2OTA3MDkyMzc2NDczNjAyIiwibmlja25hbWUiOiJSYWtpYnVsQk4ifQ.id1V0-5Mx-yKc8PBchCSIGHW-7GQt984GtCGxvPxcl8",
+                "api_user_id": "2006907092376473602",
+                "nickname": "HridoyCA",
                 "last_login": "2026-01-07T07:47:27.226821",
                 "active": true,
                 "default": true,
