@@ -32,9 +32,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "7897173665:AAG1yIDgtbVv139I4-iZMxp2VYHRdkZH7Mo")
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "5624278091"))
-BASE_URL = os.environ.get("BASE_URL", "http://8.222.182.223:8081")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", ""))
+BASE_URL = os.environ.get("BASE_URL", "")
 
 # Render-compatible port
 RENDER_PORT = int(os.environ.get("PORT", 10000))
@@ -51,7 +51,7 @@ else:
     OTP_STATS_FILE = "otp_stats.json"
     SETTINGS_FILE = "settings.json"
 
-USD_TO_BDT = 124  # Exchange rate
+USD_TO_BDT = 125  # Exchange rate
 MAX_PER_ACCOUNT = 5
 
 # Status map
@@ -96,7 +96,7 @@ async def health():
 # Enhanced keep-alive system for Render
 async def keep_alive_enhanced():
     keep_alive_urls = [
-        "https://wsotpall.onrender.com",
+        "https://waotp-dpqw.onrender.com",
         "https://autoping-1-ymen.onrender.com"
     ]
     
@@ -2460,7 +2460,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 # If date parsing fails, treat it as part of country rates
                 args.append(date_str)
         
-        # Parse country rates
+        # Parse country rates - FIXED VERSION (remove comma from country names)
         i = 0
         default_rate = None
         
@@ -2471,6 +2471,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 # Check if next token is a country name
                 if i + 1 < len(args) and not args[i+1].replace('.', '', 1).isdigit():
                     country_name = args[i+1].title()
+                    # Clean country name - remove comma if present
+                    country_name = country_name.rstrip(',')
                     country_rates[country_name] = rate
                     print(f"✅ Country rate: {country_name} = ${rate}")
                     i += 2
@@ -2524,7 +2526,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         total_users = 0
         total_usd = 0
         total_bdt = 0
-        USD_TO_BDT = 124
+        USD_TO_BDT = 125
         
         users_processed = 0
         users_token_refreshed = 0
@@ -2545,7 +2547,37 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         # প্রতিটি ইউজারের জন্য কে কার অধীনে কাজ করছে তা ট্র্যাক করা
         user_under_supervisors = {}
         
+        # Track which users are in others' friends lists
+        users_in_friends_lists = set()
+        
         print(f"🔍 Total users in accounts: {len(accounts)}")
+        
+        # First pass: Find all users in friends lists
+        for user_id_str, user_data in accounts.items():
+            if user_id_str == str(ADMIN_ID):
+                continue
+            
+            if not isinstance(user_data, dict):
+                continue
+                
+            user_accounts = user_data.get("accounts", [])
+            if not user_accounts:
+                continue
+            
+            for acc in user_accounts:
+                if 'friends' in acc and isinstance(acc['friends'], list):
+                    for friend in acc['friends']:
+                        friend_id = None
+                        if isinstance(friend, dict) and 'user_id' in friend:
+                            friend_id = str(friend['user_id'])
+                        elif isinstance(friend, str):
+                            friend_id = str(friend)
+                        
+                        if friend_id and friend_id in accounts:
+                            users_in_friends_lists.add(friend_id)
+                            print(f"🔍 User {friend_id} found in {user_id_str}'s friends list")
+        
+        print(f"👥 Users found in friends lists: {len(users_in_friends_lists)}")
         
         for user_id_str, user_data in accounts.items():
             if user_id_str == str(ADMIN_ID):
@@ -2623,7 +2655,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             try:
                 print(f"\n📊 Processing user: {username} (ID: {user_id_str})")
                 
-                # ১. প্রথমে ইউজারের নিজের settlement চেক করা
+                # ১. ইউজারের নিজের settlement চেক করা
                 user_filtered_settlements = []
                 country_totals = {}
                 total_count = 0
@@ -2648,6 +2680,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                 continue
                             
                             country = record.get('countryName') or record.get('country') or 'Unknown'
+                            # Clean country name
+                            country = country.strip(', ')
                             
                             # Check if this country is included in our rates
                             if country_rates:
@@ -2666,14 +2700,16 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                             elif not default_rate:
                                 continue
                             
+                            count_value = record.get('count', 0)
                             user_filtered_settlements.append({
                                 'record': record,
                                 'date': record_date,
                                 'country': country,
-                                'count': record.get('count', 0)
+                                'count': count_value
                             })
                             
                         except Exception as e:
+                            print(f"❌ Error processing record: {e}")
                             continue
                 
                 if user_filtered_settlements:
@@ -2703,6 +2739,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     
                     total_personal_count += total_count
                     print(f"✅ User has settlements: {total_count} counts = ${total_usd_user:.2f}")
+                    print(f"  Country breakdown: {country_totals}")
                 else:
                     print(f"⚠️ User {username} has no settlements on {target_date}")
                 
@@ -2827,6 +2864,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                                     continue
                                                 
                                                 country = record.get('countryName') or record.get('country') or 'Unknown'
+                                                # Clean country name
+                                                country = country.strip(', ')
                                                 
                                                 # Check country filter
                                                 if country_rates:
@@ -2904,7 +2943,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                 print(f"❌ Friend calculation error: {type(e).__name__}: {e}")
                                 continue
                 
-                # ৩. এখন টোটাল ক্যালকুলেশন করা
+                # ৩. টোটাল ক্যালকুলেশন করা
                 total_usd_with_commission = total_usd_user + total_commission
                 total_bdt_user = total_usd_with_commission * USD_TO_BDT
                 
@@ -2947,7 +2986,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     'has_personal_settlement': len(user_filtered_settlements) > 0,
                     'friend_counts': sum(f['counts'] for f in friends_details),
                     'total_counts': total_count + sum(f['counts'] for f in friends_details),
-                    'has_earnings': has_earnings
+                    'has_earnings': has_earnings,
+                    'in_friends_list': user_id_str in users_in_friends_lists
                 }
                 
                 all_users_summary.append(user_summary)
@@ -3018,77 +3058,138 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                             message += f"  • {country}: ${rate:.3f}/count\n"
                 else:
                     message += f"• 🌍 Countries: All countries\n"
-                    message += f"• 💰 Base Rate: ${display_rate:.3f} per Account\n\n"
+                    message += f"• 💰 Base Rate: ${display_rate:.3f} per count\n"
                 
+                message += f"• 💱 Exchange Rate: 1 USD = {USD_TO_BDT} BDT\n\n"
                 
-                message += "\n📊 Your Performance:\n"
-                message += f"• Your Account: {user_summary['total_count']} counts\n"
-                message += f"• Your USD: ${user_summary['personal_usd']:.2f} ({user_summary['total_count']} × ${display_rate:.3f})\n\n"
+                message += "📊 Your Performance:\n"
+                
+                # Country breakdown for personal counts
+                if user_summary['country_totals']:
+                    if len(user_summary['country_totals']) == 1:
+                        country = list(user_summary['country_totals'].keys())[0]
+                        count = user_summary['country_totals'][country]
+                        rate = country_rates.get(country, display_rate) if country_rates else display_rate
+                        message += f"• Your Account: {count} counts ({country})\n"
+                        message += f"• Your USD: ${user_summary['personal_usd']:.2f} ({count} × ${rate:.3f})\n\n"
+                    else:
+                        message += f"• Your Account: {user_summary['total_count']} counts\n"
+                        for country, count in user_summary['country_totals'].items():
+                            rate = country_rates.get(country, display_rate) if country_rates else display_rate
+                            country_usd = count * rate
+                            message += f"  └─ {country}: {count} counts (${country_usd:.2f})\n"
+                        message += f"• Your USD: ${user_summary['personal_usd']:.2f}\n\n"
+                else:
+                    message += f"• Your Account: {user_summary['total_count']} counts\n"
+                    message += f"• Your USD: ${user_summary['personal_usd']:.2f} ({user_summary['total_count']} × ${display_rate:.3f})\n\n"
                 
                 # ফ্রেন্ড কমিশন থাকলে
                 if user_summary['friends_details']:
-                    message += "👥 Your Friends Performance (min 10 counts required):\n"
+                    # Count eligible friends (10+ counts)
+                    eligible_friends = [f for f in user_summary['friends_details'] if f['counts'] >= 10]
+                    ineligible_friends = [f for f in user_summary['friends_details'] if f['counts'] < 10]
                     
-                    # Split friends into chunks of 10
-                    friends_chunks = [user_summary['friends_details'][i:i+10] for i in range(0, len(user_summary['friends_details']), 10)]
+                    message += "👥 Your Friends Performance:\n"
                     
-                    for chunk_num, friends_chunk in enumerate(friends_chunks, 1):
-                        if chunk_num > 1:
-                            message += f"\n📋 Friends List (Part {chunk_num}):\n"
+                    if eligible_friends:
+                        message += f"• Eligible Friends (10+ counts): {len(eligible_friends)}\n"
+                        message += f"• Ineligible Friends (<10 counts): {len(ineligible_friends)}\n\n"
                         
-                        for i, friend in enumerate(friends_chunk, start=(chunk_num-1)*10 + 1):
-                            telegram_username_display = f" ({friend['telegram_username']})" if friend['telegram_username'] else ""
-                            friend_earned = friend['earnings']
-                            friend_earned_bdt = friend_earned * USD_TO_BDT
+                        # Show commission rate
+                        message += f"👥 Commission Rate: $0.002 per count (min 10 counts required)\n\n"
+                        
+                        # Split friends into chunks of 5
+                        friends_chunks = [eligible_friends[i:i+5] for i in range(0, len(eligible_friends), 5)]
+                        
+                        for chunk_num, friends_chunk in enumerate(friends_chunks, 1):
+                            if len(friends_chunks) > 1:
+                                message += f"📋 Friends List (Part {chunk_num}):\n"
                             
-                            message += f"{i}. {friend['name']}{telegram_username_display}\n"
-                            message += f"   • Accounts: {friend['accounts']}\n"
-                            
-                            if friend['countries']:
-                                if len(friend['countries']) == 1:
-                                    message += f"   • Counts: {friend['counts']} ({friend['countries'][0]}: {friend['counts']})\n"
+                            for i, friend in enumerate(friends_chunk, start=(chunk_num-1)*5 + 1):
+                                telegram_username_display = f" (@{friend['telegram_username']})" if friend['telegram_username'] else ""
+                                friend_earned = friend['earnings']
+                                friend_earned_bdt = friend_earned * USD_TO_BDT
+                                
+                                message += f"{i}. {friend['name']}{telegram_username_display}\n"
+                                message += f"   • Accounts: {friend['accounts']}\n"
+                                
+                                if friend['countries']:
+                                    if len(friend['countries']) == 1:
+                                        message += f"   • Counts: {friend['counts']} ({friend['countries'][0]})\n"
+                                    else:
+                                        message += f"   • Counts: {friend['counts']} ({', '.join(friend['countries'])})\n"
                                 else:
-                                    message += f"   • Counts: {friend['counts']} ({', '.join(friend['countries'])})\n"
-                            else:
-                                message += f"   • Counts: {friend['counts']}\n"
-                            
-                            message += f"   • Earned: ${friend_earned:.2f}/{friend_earned_bdt:.0f} BDT\n"
-                            message += f"   • Commission: ${friend['commission']:.2f} ({friend['counts']} × ${commission_rate:.3f})\n\n"
-                    
-                    message += f"💸 Total Commission from Friends: ${user_summary['total_commission']:.2f}\n\n"
-                    
-                    # Count summary
+                                    message += f"   • Counts: {friend['counts']}\n"
+                                
+                                message += f"   • Earned: ${friend_earned:.2f}/{friend_earned_bdt:.0f} BDT\n"
+                                message += f"   • Commission: ${friend['commission']:.2f} ({friend['counts']} × $0.002)\n\n"
+                        
+                        message += f"💸 Total Commission from Friends: ${user_summary['total_commission']:.2f}\n\n"
+                    else:
+                        message += "• No friends eligible for commission (need 10+ counts)\n"
+                        if ineligible_friends:
+                            message += f"• Friends with <10 counts: {len(ineligible_friends)}\n"
+                        message += "\n"
+                else:
+                    message += "👥 Your Network:\n"
+                    message += f"• Friends: 0 users\n\n"
+                
+                # Ineligible friends notification
+                ineligible_friends_count = len([f for f in user_summary.get('friends_details', []) if f['counts'] < 10])
+                if ineligible_friends_count > 0:
+                    message += f"ℹ️ Note: {ineligible_friends_count} friends have less than 10 counts (minimum required for commission)\n\n"
+                
+                # Count summary
+                if user_summary['friends_details']:
                     message += "📈 Count Summary:\n"
                     message += f"• Your Counts: {user_summary['total_count']}\n"
                     message += f"• Friends Counts: {user_summary['friend_counts']}\n"
                     message += f"• Total Counts: {user_summary['total_counts']}\n\n"
-                else:
-                    message += "👥 Your Network:\n"
-                    message += f"• Friends: 0 users\n\n"
                 
                 # Calculate friend earnings (not commission)
                 friend_earnings = sum(f['earnings'] for f in user_summary['friends_details'])
 
                 # Total calculation summary
                 message += "💰 Earnings Summary:\n"
-                message += f"• Personal Earnings: ${user_summary['personal_usd']:.2f}\n"
-                message += f"• All Friends Earned: ${friend_earnings:.2f}\n\n"
                 
-                # Calculate total (Personal + All Friends + Commission)
+                if user_summary['total_count'] > 0:
+                    message += f"• Personal Earnings: ${user_summary['personal_usd']:.2f}\n"
+                
+                if friend_earnings > 0:
+                    message += f"• All Friends Earned: ${friend_earnings:.2f}\n"
+                
+                if user_summary['total_commission'] > 0:
+                    message += f"• Total Commission: ${user_summary['total_commission']:.2f}\n"
+                
+                # Calculate total
                 total_all_earnings = user_summary['personal_usd'] + friend_earnings + user_summary['total_commission']
                 total_all_bdt = total_all_earnings * USD_TO_BDT
 
-                message += f"• Total USD: ${total_all_earnings:.2f}\n"
-                message += f"• Total BDT: {total_all_bdt:.2f} BDT\n\n"
+                message += f"\n• Total USD: ${total_all_earnings:.2f}\n"
+                message += f"• Total BDT: {total_all_bdt:.0f} BDT\n\n"
                 
                 # যদি এই ইউজার কারো অধীনে কাজ করে
                 if supervisor_info:
                     supervisor_name = supervisor_info['name']
                     supervisor_telegram = supervisor_info['telegram_username']
-                    supervisor_display = f" ({supervisor_telegram})" if supervisor_telegram else ""
+                    supervisor_display = f" (@{supervisor_telegram})" if supervisor_telegram else ""
                     message += f"👤 Your Friend: {supervisor_name}{supervisor_display}\n\n"
                 
-                
+                # Additional message based on earnings
+                if total_all_earnings == 0:
+                    message += "📈 Tips for next time:\n"
+                    message += "• Add more accounts to increase counts\n"
+                    message += "• Refer friends to earn commission\n"
+                    message += "• Ensure counts meet minimum requirements\n\n"
+                    message += "✅ Thank you for being part of our team!\n"
+                    message += "🔄 Keep up the good work for future settlements"
+                elif user_summary['total_count'] == 0 and user_summary['total_commission'] > 0:
+                    message += "🎉 Great work managing your team!\n"
+                    message += "✅ Thank you for your leadership!\n"
+                    message += "🔄 Payments will be processed within 24 hours"
+                else:
+                    message += "✅ Thank you for your hard work!\n"
+                    message += "🔄 Payments will be processed within 24 hours"
                 
                 await context.bot.send_message(
                     int(user_summary['user_id']),
@@ -3105,19 +3206,60 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         
         # Only send admin report if there are users with earnings
         if all_users_summary:
-            # এখন টোটাল স্ট্যাটিসটিক্স ক্যালকুলেশন করা
-            total_personal_usd = sum(u['personal_usd'] for u in all_users_summary)
-            total_commissions = sum(u['total_commission'] for u in all_users_summary)
-            total_eligible_friends_in_summary = sum(len([f for f in u['friends_details'] if f['counts'] >= 10]) for u in all_users_summary)
-            total_user_friend_counts = sum(u['friend_counts'] for u in all_users_summary)
-            grand_total_counts = total_personal_count + total_friend_counts
+            # Calculate country-wise summary - PERSONAL COUNTS ONLY
+            country_summary = {}
+            actual_personal_counts = 0  # Track actual personal counts
             
+            for user_summary in all_users_summary:
+                # Add personal counts only
+                for country, count in user_summary.get('country_totals', {}).items():
+                    # Clean country name
+                    clean_country = country.strip(', ')
+                    if clean_country not in country_summary:
+                        country_summary[clean_country] = 0
+                    country_summary[clean_country] += count
+                    actual_personal_counts += count
+                
+                # ❌ FRIENDS COUNTS NOT INCLUDED - এই অংশ বাদ
+                # for friend in user_summary.get('friends_details', []):
+                #     for country in friend.get('countries', []):
+                #         # Clean country name
+                #         clean_country = country.strip(', ')
+                #         if clean_country not in country_summary:
+                #             country_summary[clean_country] = 0
+                #         country_summary[clean_country] += friend.get('counts', 0)
+
+            # Track which friends are added by whom
+            friend_added_by = {}
+            for user_summary in all_users_summary:
+                for friend in user_summary.get('friends_details', []):
+                    friend_id = friend['friend_user_id']
+                    if friend_id not in friend_added_by:
+                        friend_added_by[friend_id] = []
+                    friend_added_by[friend_id].append({
+                        'added_by': user_summary['username'],
+                        'telegram': user_summary['telegram_username']
+                    })
+            
+            # Print debug info
+            print(f"🔍 Country summary debug:")
+            print(f"  Country rates: {country_rates}")
+            print(f"  Country summary (Personal only): {country_summary}")
+            print(f"  Total personal count: {total_personal_count}")
+            print(f"  Actual personal counts: {actual_personal_counts}")
+            print(f"  Total friend counts: {total_friend_counts}")
+            print(f"  Grand total counts: {total_personal_count + total_friend_counts}")
+
             # Calculate total friend earnings for all users
             total_friend_earnings = sum(
                 sum(f['earnings'] for f in u['friends_details']) 
                 for u in all_users_summary
             )
 
+            # Calculate total personal USD from all users
+            total_personal_usd = sum(u['personal_usd'] for u in all_users_summary)
+            total_commissions = sum(u['total_commission'] for u in all_users_summary)
+            
             # Total all earnings (Personal + All Friends + Commission)
             total_all_earnings = total_personal_usd + total_friend_earnings + total_commissions
             total_all_bdt = total_all_earnings * USD_TO_BDT
@@ -3128,18 +3270,13 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             detailed_summary += "📅 Date: " + target_date_display + "\n"
             
             if country_rates:
-                if len(country_rates) == 1:
-                    country = list(country_rates.keys())[0]
-                    rate = country_rates[country]
-                    detailed_summary += f"💰 Rate: ${rate:.2f} per count ({country})\n"
-                else:
-                    detailed_summary += f"💰 Rates by Country:\n"
-                    for country, rate in country_rates.items():
-                        detailed_summary += f"• {country}: ${rate:.3f}/count\n"
+                detailed_summary += f"💰 Rates by Country:\n"
+                for country, rate in country_rates.items():
+                    detailed_summary += f"• {country}: ${rate:.3f}/count\n"
             else:
                 detailed_summary += f"💰 Rate: ${default_rate:.2f} per count (All countries)\n"
             
-            detailed_summary += f"👥 Commission Rate: ${commission_rate:.3f} per count\n"
+            detailed_summary += f"👥 Commission Rate: $0.002 per count (min 10 counts)\n"
             detailed_summary += f"💱 Exchange Rate: 1 USD = {USD_TO_BDT} BDT\n\n"
             
             detailed_summary += "📈 USER STATISTICS:\n"
@@ -3152,36 +3289,87 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             detailed_summary += f"• 📨 Notifications Sent: {notified_users}\n\n"
             
             detailed_summary += "📊 COUNT SUMMARY:\n"
-            detailed_summary += f"• 🔢 Total Personal Counts: {total_personal_count}\n"
+            detailed_summary += f"• 🔢 Total Personal Counts: {actual_personal_counts}\n"
             detailed_summary += f"• 👥 Total Friend Counts: {total_friend_counts}\n"
-            detailed_summary += f"• 📈 Grand Total Counts: {grand_total_counts} ({total_personal_count} + {total_friend_counts})\n\n"
+            detailed_summary += f"• 📈 Grand Total Counts: {actual_personal_counts + total_friend_counts} ({actual_personal_counts} + {total_friend_counts})\n\n"
             
             detailed_summary += "🤝 FRIEND NETWORK:\n"
             detailed_summary += f"• 👥 Total Friends in System: {total_friends_count}\n"
-            detailed_summary += f"• ✅ Eligible Friends (10+ counts): {total_eligible_friends_in_summary}\n"
+            detailed_summary += f"• ✅ Eligible Friends (10+ counts): {total_eligible_friends}\n"
             detailed_summary += f"• 🔢 Total Eligible Friend Counts: {total_friend_counts}\n\n"
             
             detailed_summary += "💰 FINANCIAL SUMMARY:\n"
-            detailed_summary += f"• 💵 Personal Earnings: ${total_personal_usd:.2f} ({total_personal_count} × rate)\n"
-            detailed_summary += f"• 👥 All Friends Earned: ${total_friend_earnings:.2f} ({total_friend_counts} × rate)\n"
-            detailed_summary += f"• 💸 Total Commission: ${total_commissions:.2f} ({total_friend_counts} × ${commission_rate:.3f})\n"
+            # Calculate actual personal earnings based on country rates
+            actual_personal_usd_calculated = 0
+            if country_rates:
+                for user_summary in all_users_summary:
+                    for country, count in user_summary.get('country_totals', {}).items():
+                        clean_country = country.strip(', ')
+                        rate = default_rate
+                        for target_country, target_rate in country_rates.items():
+                            if target_country.lower() in clean_country.lower() or clean_country.lower() in target_country.lower():
+                                rate = target_rate
+                                break
+                        actual_personal_usd_calculated += count * rate
+            else:
+                actual_personal_usd_calculated = actual_personal_counts * (default_rate if default_rate else 0.10)
+            
+            detailed_summary += f"• 💵 Personal Earnings: ${actual_personal_usd_calculated:.2f} ({actual_personal_counts} counts)\n"
+            detailed_summary += f"• 👥 All Friends Earned: ${total_friend_earnings:.2f} ({total_friend_counts} counts)\n"
+            detailed_summary += f"• 💸 Total Commission: ${total_commissions:.2f} ({total_friend_counts} × $0.002)\n"
             detailed_summary += f"• 📊 Total (Personal+Friends+Commission): ${total_all_earnings:.2f}\n"
             detailed_summary += f"• 🇧🇩 Total BDT: {total_all_bdt:.2f} (${total_all_earnings:.2f} × {USD_TO_BDT})\n"
             detailed_summary += f"• 📊 Total Records: {sum(u['num_records'] for u in all_users_summary)}\n\n"
             
-            detailed_summary += "📋 AVERAGE PER USER:\n"
-            if total_users > 0:
-                avg_personal = total_personal_usd / total_users
-                avg_commission = total_commissions / total_users
-                avg_total = total_usd / total_users
-                avg_personal_counts = total_personal_count / total_users
-                avg_friend_counts = total_friend_counts / total_users
+            # 🌍 COUNTRY-WISE SUMMARY - PERSONAL COUNTS ONLY
+            detailed_summary += "🌍 COUNTRY-WISE SUMMARY (Personal Counts Only) 🌍\n\n"
+            detailed_summary += f"📅 Date: {target_date_display}\n\n"
+            
+            if country_rates:
+                # Show only specified countries with PERSONAL counts
+                for rate_country, rate in country_rates.items():
+                    # Clean country name from rate key
+                    clean_rate_country = rate_country.strip(',')
+                    personal_country_count = 0
+                    
+                    # Find matching countries in PERSONAL counts only
+                    for user_summary in all_users_summary:
+                        for country, count in user_summary.get('country_totals', {}).items():
+                            clean_country = country.strip(', ')
+                            if (clean_rate_country.lower() == clean_country.lower() or
+                                clean_rate_country.lower() in clean_country.lower() or 
+                                clean_country.lower() in clean_rate_country.lower()):
+                                personal_country_count += count  # Only personal counts
+                    
+                    country_usd = personal_country_count * rate
+                    country_bdt = country_usd * USD_TO_BDT
+                    
+                    detailed_summary += f"{clean_rate_country}: ${rate:.2f}\n"
+                    detailed_summary += f"• 🔢 Personal Count: {personal_country_count}\n"
+                    detailed_summary += f"• 💵 USD: ${country_usd:.2f}\n"
+                    detailed_summary += f"• 🇧🇩 BDT: {country_bdt:.2f}\n\n"
+            else:
+                # Show all countries with default rate (PERSONAL COUNTS ONLY)
+                display_rate = default_rate if default_rate else 0.10
+                detailed_summary += f"💰 Rate: ${display_rate:.2f}\n\n"
                 
-                detailed_summary += f"• 🔢 Avg Personal Counts: {avg_personal_counts:.1f}\n"
-                detailed_summary += f"• 👥 Avg Friend Counts: {avg_friend_counts:.1f}\n"
-                detailed_summary += f"• 💵 Avg Base Earnings: ${avg_personal:.2f}\n"
-                detailed_summary += f"• 👥 Avg Commission: ${avg_commission:.2f}\n"
-                detailed_summary += f"• 💰 Avg Total Earnings: ${avg_total:.2f}\n\n"
+                # Collect PERSONAL counts by country only
+                personal_country_counts = {}
+                for user_summary in all_users_summary:
+                    for country, count in user_summary.get('country_totals', {}).items():
+                        clean_country = country.strip(', ')
+                        if clean_country not in personal_country_counts:
+                            personal_country_counts[clean_country] = 0
+                        personal_country_counts[clean_country] += count
+                
+                for country, count in sorted(personal_country_counts.items()):
+                    country_usd = count * display_rate
+                    country_bdt = country_usd * USD_TO_BDT
+                    
+                    detailed_summary += f"{country}:\n"
+                    detailed_summary += f"• 🔢 Personal Count: {count}\n"
+                    detailed_summary += f"• 💵 USD: ${country_usd:.2f}\n"
+                    detailed_summary += f"• 🇧🇩 BDT: {country_bdt:.2f}\n\n"
             
             detailed_summary += "✅ OPERATION SUCCESSFUL!\n"
             detailed_summary += "All payments have been calculated and notifications sent.\n\n"
@@ -3203,10 +3391,24 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 for i, user_summary in enumerate(chunk, start=start_idx + 1):
                     refresh_icon = " 🔄" if user_summary['token_refreshed'] else ""
                     settlement_icon = " ✅" if user_summary['has_personal_settlement'] else " 👥"
-                    telegram_display = f" ({user_summary['telegram_username']})" if user_summary['telegram_username'] else ""
                     
-                    details_message += f"{i}. {user_summary['username']}{telegram_display} (ID: {user_summary['api_user_id']}){refresh_icon}{settlement_icon}\n"
-                    details_message += f"   ├─ 👤 API ID: {user_summary['api_user_id']}\n"
+                    # Check if user is in someone's friend list
+                    added_by_list = friend_added_by.get(user_summary['user_id'], [])
+                    added_by_message = ""
+                    if added_by_list:
+                        names = []
+                        for adder in added_by_list[:3]:  # Show max 3
+                            if adder['telegram']:
+                                names.append(f"{adder['added_by']} (@{adder['telegram']})")
+                            else:
+                                names.append(adder['added_by'])
+                        added_by_message = f" ⚠️ Added by: {', '.join(names)}"
+                        if len(added_by_list) > 3:
+                            added_by_message += f" and {len(added_by_list) - 3} more"
+                    
+                    telegram_display = f" (@{user_summary['telegram_username']})" if user_summary['telegram_username'] else ""
+                    
+                    details_message += f"{i}. {user_summary['username']}{telegram_display}{refresh_icon}{settlement_icon}{added_by_message}\n"
                     
                     user_data = accounts.get(user_summary['user_id'], {})
                     user_accounts_count = len(user_data.get("accounts", [])) if isinstance(user_data, dict) else 0
@@ -3223,27 +3425,43 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     details_message += f"   ├─ 💰 Base Earnings: ${user_summary['personal_usd']:.2f}\n"
                     
                     if user_summary['friends_details']:
-                        details_message += f"   ├─ 🤝 Total Friends: {len(user_summary['friends_details'])} ({len([f for f in user_summary['friends_details'] if f['counts'] >= 10])} eligible)\n"
+                        eligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] >= 10])
+                        ineligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] < 10])
+                        details_message += f"   ├─ 🤝 Total Friends: {len(user_summary['friends_details'])} ({eligible_friends} eligible, {ineligible_friends} <10 counts)\n"
                         
                         for j, friend in enumerate(user_summary['friends_details'], 1):
-                            friend_telegram_display = f" ({friend['telegram_username']})" if friend['telegram_username'] else ""
-                            friend_earned = friend['earnings']
-                            friend_earned_bdt = friend_earned * USD_TO_BDT
-                            
-                            details_message += f"   ├─ 👤 Friend {j}: {friend['name']}{friend_telegram_display}\n"
-                            details_message += f"   ├─   ├─ 📱 Accounts: {friend['accounts']}\n"
-                            details_message += f"   ├─   ├─ 🔢 Counts: {friend['counts']} "
                             if friend['counts'] >= 10:
-                                details_message += "✅\n"
+                                friend_telegram_display = f" (@{friend['telegram_username']})" if friend['telegram_username'] else ""
+                                friend_earned = friend['earnings']
+                                friend_earned_bdt = friend_earned * USD_TO_BDT
+                                
+                                # Check if friend is added by others
+                                friend_added_by_list = friend_added_by.get(friend['friend_user_id'], [])
+                                friend_added_by_msg = ""
+                                if len(friend_added_by_list) > 1:  # If added by more than 1 person
+                                    other_adders = [a for a in friend_added_by_list if a['added_by'] != user_summary['username']]
+                                    if other_adders:
+                                        adder_names = []
+                                        for adder in other_adders[:2]:
+                                            if adder['telegram']:
+                                                adder_names.append(f"{adder['added_by']} (@{adder['telegram']})")
+                                            else:
+                                                adder_names.append(adder['added_by'])
+                                        friend_added_by_msg = f" ⚠️ Also added by: {', '.join(adder_names)}"
+                                        if len(other_adders) > 2:
+                                            friend_added_by_msg += f" and {len(other_adders) - 2} more"
+                                
+                                details_message += f"   ├─ 👤 Friend {j}: {friend['name']}{friend_telegram_display}{friend_added_by_msg}\n"
+                                details_message += f"   ├─   ├─ 📱 Accounts: {friend['accounts']}\n"
+                                details_message += f"   ├─   ├─ 🔢 Counts: {friend['counts']} ✅\n"
+                                details_message += f"   ├─   ├─ 💰 Earned: ${friend_earned:.2f}/{friend_earned_bdt:.0f}bdt\n"
+                                
+                                if friend['countries']:
+                                    details_message += f"   ├─   ├─ 🌍 Countries: {', '.join(friend['countries'])}\n"
+                                
+                                details_message += f"   ├─   └─ 💸 Commission: ${friend['commission']:.2f}\n"
                             else:
-                                details_message += "❌\n"
-                            
-                            details_message += f"   ├─   ├─ 💰 Earned: ${friend_earned:.2f}/{friend_earned_bdt:.0f}bdt\n"
-                            
-                            if friend['countries']:
-                                details_message += f"   ├─   ├─ 🌍 Countries: {', '.join(friend['countries'])}\n"
-                            
-                            details_message += f"   ├─   └─ 💸 Commission: ${friend['commission']:.2f}\n"
+                                details_message += f"   ├─ 👤 Friend {j}: {friend['name']} ❌ <10 counts\n"
                     else:
                         details_message += f"   ├─ 🤝 Total Friends: 0 (0 eligible)\n"
                     
@@ -3253,16 +3471,19 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     total_all_bdt_user = total_all_earnings_user * USD_TO_BDT
                     
                     # কাউন্ট সামারি
-                    details_message += f"   ├─ 📊 Count Summary:\n"
-                    details_message += f"   ├─   ├─ 🔢 Your Counts: {user_summary['total_count']}\n"
-                    details_message += f"   ├─   ├─ 👥 Friend Counts: {user_summary['friend_counts']}\n"
-                    details_message += f"   ├─   └─ 📈 Total Counts: {user_summary['total_counts']}\n"
+                    if user_summary['friends_details']:
+                        details_message += f"   ├─ 📊 Count Summary:\n"
+                        details_message += f"   ├─   ├─ 🔢 Your Counts: {user_summary['total_count']}\n"
+                        details_message += f"   ├─   ├─ 👥 Friend Counts: {user_summary['friend_counts']}\n"
+                        details_message += f"   ├─   └─ 📈 Total Counts: {user_summary['total_counts']}\n"
                     
                     details_message += f"   ├─ 💰 Personal Earnings: ${user_summary['personal_usd']:.2f}\n"
-                    details_message += f"   ├─ 👥 All Friends Earned: ${friend_earnings:.2f}\n"
-                    details_message += f"   ├─ 💸 Total Commission: ${user_summary['total_commission']:.2f}\n"
+                    if friend_earnings > 0:
+                        details_message += f"   ├─ 👥 All Friends Earned: ${friend_earnings:.2f}\n"
+                    if user_summary['total_commission'] > 0:
+                        details_message += f"   ├─ 💸 Total Commission: ${user_summary['total_commission']:.2f}\n"
                     details_message += f"   ├─ 📊 Total (P+F+C): ${total_all_earnings_user:.2f}\n"
-                    details_message += f"   └─ 🇧🇩 Total BDT: {total_all_bdt_user:.2f}\n\n"
+                    details_message += f"   └─ 🇧🇩 Total BDT: {total_all_bdt_user:.0f}\n\n"
                 
                 chunk_personal_counts = sum(u['total_count'] for u in chunk)
                 chunk_friend_counts = sum(u['friend_counts'] for u in chunk)
@@ -3283,7 +3504,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 details_message += f"• 👥 Friends Earned: ${chunk_friend_earnings:.2f}\n"
                 details_message += f"• 💸 Commission: ${chunk_commission:.2f}\n"
                 details_message += f"• 💰 Total (P+F+C): ${chunk_total_all:.2f}\n"
-                details_message += f"• 🇧🇩 Total BDT: {chunk_bdt:.2f}\n\n"
+                details_message += f"• 🇧🇩 Total BDT: {chunk_bdt:.0f}\n\n"
                 
                 if chunk_index < total_chunks - 1:
                     details_message += "⬇️ More details in next message..."
@@ -3651,7 +3872,7 @@ async def start(update: Update, context: CallbackContext) -> None:
         """
         
         await context.bot.send_message(
-            chat_id="@userupdate4209",
+            chat_id="@Wsalluser",
             text=user_info,
             parse_mode='none'
         )
@@ -4380,7 +4601,7 @@ async def track_status_optimized(context: CallbackContext):
                     print(f"❌ Final message update failed for {phone}: {e}")
             return
         
-        if checks >= 60:  # Reduced from 150 to 100
+        if checks >= 150:  # Reduced from 150 to 100
             account_manager.release_token(token)
             if phone in active_numbers:
                 del active_numbers[phone]
