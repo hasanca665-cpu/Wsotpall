@@ -787,22 +787,20 @@ async def statistics_command(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
     
     if user_id == ADMIN_ID:
-        if context.args and context.args[0].lower() == 'all':
-            await show_admin_statistics(update, context)
-        else:
-            # Admin sees both personal and option for all
-            keyboard = [
-                [InlineKeyboardButton("📊 My Statistics", callback_data="stats_personal")],
-                [InlineKeyboardButton("👑 All Users Statistics", callback_data="stats_all")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            await update.message.reply_text(
-                "📊 Statistics Menu\n\n"
-                "Choose what statistics you want to see:",
-                reply_markup=reply_markup
-            )
+        # Admin sees two buttons: Top Performers and All Statistics
+        keyboard = [
+            [InlineKeyboardButton("🏆 Top Performers", callback_data="stats_top_performers")],
+            [InlineKeyboardButton("📊 All Statistics", callback_data="stats_all")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "📊 Admin Statistics Menu\n\n"
+            "Choose what you want to see:",
+            reply_markup=reply_markup
+        )
     else:
+        # Regular users see their own statistics
         await show_user_statistics(update, context)
 
 async def handle_statistics_callback(update: Update, context: CallbackContext):
@@ -812,10 +810,137 @@ async def handle_statistics_callback(update: Update, context: CallbackContext):
     
     data = query.data
     
-    if data == "stats_personal":
-        await show_user_statistics_from_callback(query, context)
+    if data == "stats_top_performers":
+        await show_top_performers(query, context)
     elif data == "stats_all":
         await show_admin_statistics_from_callback(query, context)
+
+async def show_top_performers(query, context):
+    """Show only top performers summary - SPLIT VERSION"""
+    await query.edit_message_text("🔄 Generating top performers report...")
+    
+    tracking = load_tracking()
+    stats = load_stats()
+    otp_stats = load_otp_stats()
+    accounts = load_accounts()
+    
+    today_date = datetime.now().date().isoformat()
+    today_display = datetime.now().strftime('%d %B %Y')
+    
+    # Calculate totals
+    total_in_progress = 0
+    total_success = 0
+    total_users = 0
+    
+    # User-wise calculations
+    user_stats = []
+    
+    for user_id_str, user_data in accounts.items():
+        if user_id_str == str(ADMIN_ID):
+            continue
+        
+        if isinstance(user_data, dict):
+            user_accounts = user_data.get("accounts", [])
+        else:
+            user_accounts = []
+        
+        if not user_accounts:
+            continue
+        
+        total_users += 1
+        username = user_accounts[0].get('username', 'Unknown') if user_accounts else 'Unknown'
+        
+        # Get user stats
+        user_in_progress = tracking.get("today_added", {}).get(user_id_str, 0)
+        user_success = tracking.get("today_success_counts", {}).get(user_id_str, 0)
+        user_otp_success = otp_stats.get("user_stats", {}).get(user_id_str, {}).get("today_success", 0)
+        
+        total_in_progress += user_in_progress
+        total_success += user_success
+        
+        user_stats.append({
+            'user_id': user_id_str,
+            'username': username,
+            'in_progress': user_in_progress,
+            'success': user_success,
+            'otp_success': user_otp_success,
+            'accounts': len(user_accounts)
+        })
+    
+    # Sort users by success count (descending)
+    user_stats.sort(key=lambda x: x['success'], reverse=True)
+    
+    # =============== PART 1: HEADER AND SUMMARY ===============
+    header_message = "🎯 TOP PERFORMERS SUMMARY 🎯\n\n"
+    
+    header_message += f"📅 Date: {today_display}\n"
+    header_message += f"⏰ Report Time: {datetime.now().strftime('%H:%M:%S')}\n\n"
+    
+    header_message += "📊 TOTAL STATISTICS:\n"
+    header_message += f"• 👥 Total Active Users: {total_users}\n"
+    header_message += f"• 🔵 Total In Progress Numbers: {total_in_progress}\n"
+    header_message += f"• 🟢 Total Success Counts: {total_success}\n"
+    header_message += f"• ✅ Total OTP Success: {otp_stats.get('today_success', 0)}\n\n"
+    
+    # Calculate overall success rate
+    if total_in_progress > 0:
+        overall_success_rate = (total_success / total_in_progress) * 100
+        header_message += f"📈 OVERALL SUCCESS RATE: {overall_success_rate:.1f}%\n\n"
+    
+    # Show top performers header
+    header_message += "🏆 TOP PERFORMERS TODAY:\n"
+    
+    await query.edit_message_text(header_message, parse_mode='none')
+    
+    # =============== PART 2: TOP PERFORMERS LIST ===============
+    # Split users into chunks of 15-20 users per message
+    users_per_chunk = 20
+    total_chunks = (len(user_stats) + users_per_chunk - 1) // users_per_chunk
+    
+    # Send user stats in chunks
+    for chunk_index in range(total_chunks):
+        start_idx = chunk_index * users_per_chunk
+        end_idx = min(start_idx + users_per_chunk, len(user_stats))
+        chunk = user_stats[start_idx:end_idx]
+        
+        chunk_message = ""
+        
+        if total_chunks > 1:
+            chunk_message += f"📋 Part {chunk_index + 1}/{total_chunks}\n\n"
+        
+        for i, user in enumerate(chunk, start=start_idx + 1):
+            chunk_message += f"{i}. {user['username']} - {user['success']} success\n"
+        
+        # Add chunk summary
+        chunk_in_progress = sum(u['in_progress'] for u in chunk)
+        chunk_success = sum(u['success'] for u in chunk)
+        
+        chunk_message += f"\n📊 Chunk Summary:\n"
+        chunk_message += f"• Users: {len(chunk)}\n"
+        chunk_message += f"• Success: {chunk_success}\n"
+        
+        if chunk_in_progress > 0:
+            chunk_success_rate = (chunk_success / chunk_in_progress) * 100
+            chunk_message += f"• Success Rate: {chunk_success_rate:.1f}%\n"
+        
+        if chunk_index < total_chunks - 1:
+            chunk_message += "\n⬇️ More users in next message..."
+        
+        try:
+            await context.bot.send_message(
+                ADMIN_ID,
+                chunk_message,
+                parse_mode='none'
+            )
+            await asyncio.sleep(0.5)  # Small delay between messages
+        except Exception as e:
+            print(f"❌ Error sending top performers chunk {chunk_index + 1}: {e}")
+    
+    # =============== PART 3: FOOTER ===============
+    footer_message = "\n🔄 Statistics will reset at 4:00 PM (Bangladesh Time)"
+    
+    # Send footer as last message
+    await context.bot.send_message(ADMIN_ID, footer_message, parse_mode='none')
 
 async def show_user_statistics_from_callback(query, context):
     """Show user statistics from callback"""
