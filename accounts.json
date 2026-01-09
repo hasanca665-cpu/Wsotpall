@@ -640,6 +640,29 @@
         "telegram_username": "",
         "last_active": "2025-01-27T15:30:00.000000"
     },
+    "1234567894": {
+        "accounts": [
+            {
+                "id": 1,
+                "custom_name": "Canada 🇨🇦",
+                "username": "SBAsadulCA",
+                "password": "SBAsadulCA",
+                "token": "",
+                "api_user_id": "",
+                "nickname": "SBAsadulCA",
+                "last_login": "",
+                "active": true,
+                "default": true,
+                "added_by": 5624278091,
+                "added_at": "",
+                "telegram_username": "",
+                "friends": []
+            }
+        ],
+        "selected_account_id": 1,
+        "telegram_username": "",
+        "last_active": ""
+    },
     "8558214921": {
         "accounts": [
             {
@@ -1466,6 +1489,35 @@
                 "token": "",
                 "api_user_id": "",
                 "nickname": "SadatCA",
+                "last_login": "",
+                "active": true,
+                "default": true,
+                "added_by": 5624278091,
+                "added_at": "",
+                "telegram_username": "",
+                "friends": [
+                    {
+                        "user_id": "8039682253",
+                        "name": "TeamsadatCA",
+                        "telegram_username": ""
+                    }
+                    ]
+            }
+        ],
+        "selected_account_id": 1,
+        "telegram_username": "",
+        "last_active": ""
+    },
+    "8039682253": {
+        "accounts": [
+            {
+                "id": 1,
+                "custom_name": "Canada 🇨🇦",
+                "username": "TeamsadatCA",
+                "password": "TeamsadatCA",
+                "token": "",
+                "api_user_id": "",
+                "nickname": "TeamsadatCA",
                 "last_login": "",
                 "active": true,
                 "default": true,
