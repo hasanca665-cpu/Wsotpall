@@ -52,7 +52,7 @@ else:
     SETTINGS_FILE = "settings.json"
 
 USD_TO_BDT = 125  # Exchange rate
-MAX_PER_ACCOUNT = 10
+MAX_PER_ACCOUNT = 5
 
 # Status map
 status_map = {
