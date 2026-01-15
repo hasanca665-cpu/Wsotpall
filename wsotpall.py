@@ -894,7 +894,7 @@ async def show_top_performers(query, context):
     
     # =============== PART 2: TOP PERFORMERS LIST ===============
     # Split users into chunks of 15-20 users per message
-    users_per_chunk = 100
+    users_per_chunk = 50
     total_chunks = (len(user_stats) + users_per_chunk - 1) // users_per_chunk
     
     # Send user stats in chunks
