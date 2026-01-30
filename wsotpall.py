@@ -62,14 +62,14 @@ status_map = {
     3: "⚠️ Try Again Later",
     4: "🚫 Not Register",
     7: "🚫 Ban Number",
-    5: "🟡 Pending Verification",
+    5: "⏳️ Recent Request",
     6: "🔴 Wrong OTP",
     8: "🟠 Limited",
     9: "🔶 Restricted", 
     10: "🟣 VIP Number",
     11: "⚠️ Add Again",
     12: "🟤 Temp Blocked",
-    13: "Used Number",
+    13: "⚠️ Bad Number",
     14: "🌀 Processing",
     15: "📞 Call Required",
     -1: "❌ Token Expired",
@@ -2585,7 +2585,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 # If date parsing fails, treat it as part of country rates
                 args.append(date_str)
         
-        # Parse country rates - FIXED VERSION (remove comma from country names)
+        # Parse country rates
         i = 0
         default_rate = None
         
@@ -3033,7 +3033,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                         
                                         print(f"📈 Friend {friend_username} filtered count for target countries: {friend_filtered_count}")
                                         
-                                        if friend_filtered_count >= 10:
+                                        if friend_filtered_count >= 1:
                                             friend_commission = friend_filtered_count * commission_rate
                                             total_commission += friend_commission
                                             total_friend_counts += friend_filtered_count
@@ -3112,7 +3112,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     'friend_counts': sum(f['counts'] for f in friends_details),
                     'total_counts': total_count + sum(f['counts'] for f in friends_details),
                     'has_earnings': has_earnings,
-                    'in_friends_list': user_id_str in users_in_friends_lists
+                    'in_friends_list': user_id_str in users_in_friends_lists,
+                    'friends_list': friends_details
                 }
                 
                 all_users_summary.append(user_summary)
@@ -3154,6 +3155,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         print(f"• Total USD: ${total_usd:.2f}")
         print(f"• Total BDT: {total_bdt:.2f}")
         
+        # আগের notification সিস্টেম (original)
         notified_users = 0
         for user_summary in all_users_summary:
             try:
@@ -3211,8 +3213,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 # ফ্রেন্ড কমিশন থাকলে
                 if user_summary['friends_details']:
                     # Count eligible friends (10+ counts)
-                    eligible_friends = [f for f in user_summary['friends_details'] if f['counts'] >= 10]
-                    ineligible_friends = [f for f in user_summary['friends_details'] if f['counts'] < 10]
+                    eligible_friends = [f for f in user_summary['friends_details'] if f['counts'] >= 1]
+                    ineligible_friends = [f for f in user_summary['friends_details'] if f['counts'] < 1]
                     
                     message += "👥 Your Friends Performance:\n"
                     
@@ -3260,7 +3262,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     message += f"• Friends: 0 users\n\n"
                 
                 # Ineligible friends notification
-                ineligible_friends_count = len([f for f in user_summary.get('friends_details', []) if f['counts'] < 10])
+                ineligible_friends_count = len([f for f in user_summary.get('friends_details', []) if f['counts'] < 1])
                 if ineligible_friends_count > 0:
                     message += f"ℹ️ Note: {ineligible_friends_count} friends have less than 10 counts (minimum required for commission)\n\n"
                 
@@ -3329,6 +3331,19 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             except Exception as e:
                 print(f"❌ Notification failed for {user_summary['user_id']}: {e}")
         
+        # Track which friends are added by whom
+        friend_added_by = {}
+        for user_summary in all_users_summary:
+            for friend in user_summary.get('friends_details', []):
+                friend_id = friend['friend_user_id']
+                if friend_id not in friend_added_by:
+                    friend_added_by[friend_id] = []
+                friend_added_by[friend_id].append({
+                    'added_by': user_summary['username'],
+                    'telegram': user_summary['telegram_username'],
+                    'user_id': user_summary['user_id']
+                })
+        
         # Only send admin report if there are users with earnings
         if all_users_summary:
             # Calculate country-wise summary - PERSONAL COUNTS ONLY
@@ -3344,37 +3359,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                         country_summary[clean_country] = 0
                     country_summary[clean_country] += count
                     actual_personal_counts += count
-                
-                # ❌ FRIENDS COUNTS NOT INCLUDED - এই অংশ বাদ
-                # for friend in user_summary.get('friends_details', []):
-                #     for country in friend.get('countries', []):
-                #         # Clean country name
-                #         clean_country = country.strip(', ')
-                #         if clean_country not in country_summary:
-                #             country_summary[clean_country] = 0
-                #         country_summary[clean_country] += friend.get('counts', 0)
-
-            # Track which friends are added by whom
-            friend_added_by = {}
-            for user_summary in all_users_summary:
-                for friend in user_summary.get('friends_details', []):
-                    friend_id = friend['friend_user_id']
-                    if friend_id not in friend_added_by:
-                        friend_added_by[friend_id] = []
-                    friend_added_by[friend_id].append({
-                        'added_by': user_summary['username'],
-                        'telegram': user_summary['telegram_username']
-                    })
             
-            # Print debug info
-            print(f"🔍 Country summary debug:")
-            print(f"  Country rates: {country_rates}")
-            print(f"  Country summary (Personal only): {country_summary}")
-            print(f"  Total personal count: {total_personal_count}")
-            print(f"  Actual personal counts: {actual_personal_counts}")
-            print(f"  Total friend counts: {total_friend_counts}")
-            print(f"  Grand total counts: {total_personal_count + total_friend_counts}")
-
             # Calculate total friend earnings for all users
             total_friend_earnings = sum(
                 sum(f['earnings'] for f in u['friends_details']) 
@@ -3502,149 +3487,176 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             
             await processing_msg.edit_text(detailed_summary, parse_mode='none')
             
-            # অ্যাডমিনের জন্য ডিটেইলড রিপোর্ট
-            users_per_message = 5
-            total_chunks = (len(all_users_summary) + users_per_message - 1) // users_per_message
-            
-            for chunk_index in range(total_chunks):
-                start_idx = chunk_index * users_per_message
-                end_idx = min(start_idx + users_per_message, len(all_users_summary))
-                chunk = all_users_summary[start_idx:end_idx]
+            # প্রতিটি ইউজারের জন্য আলাদা বার্তা পাঠান (1 জন করে)
+            for user_summary in all_users_summary:
+                # Check if user is in someone's friend list
+                added_by_list = friend_added_by.get(user_summary['user_id'], [])
                 
-                details_message = f"📋 USER DETAILS - PART {chunk_index + 1}/{total_chunks} 📋\n\n"
+                user_message = f"📋 USER DETAILS\n\n"
                 
-                for i, user_summary in enumerate(chunk, start=start_idx + 1):
-                    refresh_icon = " 🔄" if user_summary['token_refreshed'] else ""
-                    settlement_icon = " ✅" if user_summary['has_personal_settlement'] else " 👥"
+                telegram_display = f" (@{user_summary['telegram_username']})" if user_summary['telegram_username'] else ""
+                refresh_icon = " 🔄" if user_summary['token_refreshed'] else ""
+                settlement_icon = " ✅" if user_summary['has_personal_settlement'] else " 👥"
+                
+                user_message += f"👤 User: {user_summary['username']}{telegram_display}{refresh_icon}{settlement_icon}\n"
+                
+                user_data = accounts.get(user_summary['user_id'], {})
+                user_accounts_count = len(user_data.get("accounts", [])) if isinstance(user_data, dict) else 0
+                user_message += f"├─ 📱 Accounts: {user_accounts_count}\n"
+                
+                if len(user_summary['countries']) == 1:
+                    user_message += f"├─ 🌍 Country: {user_summary['countries'][0]}\n"
+                elif len(user_summary['countries']) > 1:
+                    user_message += f"├─ 🌍 Countries: {', '.join(user_summary['countries'][:3])}"
+                    if len(user_summary['countries']) > 3:
+                        user_message += f" (+{len(user_summary['countries']) - 3} more)"
+                    user_message += f"\n"
+                else:
+                    user_message += f"├─ 🌍 Countries: All\n"
+                
+                user_message += f"├─ 🔢 Personal Count: {user_summary['total_count']}\n"
+                user_message += f"├─ 💰 Personal Earnings: ${user_summary['personal_usd']:.2f}\n"
+                
+                if user_summary['friends_details']:
+                    eligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] >= 1])
+                    ineligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] < 1])
+                    user_message += f"├─ 🤝 Total Friends: {len(user_summary['friends_details'])} ({eligible_friends} eligible, {ineligible_friends} <10 counts)\n"
                     
-                    # Check if user is in someone's friend list
-                    added_by_list = friend_added_by.get(user_summary['user_id'], [])
-                    added_by_message = ""
-                    if added_by_list:
-                        names = []
-                        for adder in added_by_list[:3]:  # Show max 3
-                            if adder['telegram']:
-                                names.append(f"{adder['added_by']} (@{adder['telegram']})")
-                            else:
-                                names.append(adder['added_by'])
-                        added_by_message = f" ⚠️ Added by: {', '.join(names)}"
-                        if len(added_by_list) > 3:
-                            added_by_message += f" and {len(added_by_list) - 3} more"
-                    
-                    telegram_display = f" (@{user_summary['telegram_username']})" if user_summary['telegram_username'] else ""
-                    
-                    details_message += f"{i}. {user_summary['username']}{telegram_display}{refresh_icon}{settlement_icon}{added_by_message}\n"
-                    
-                    user_data = accounts.get(user_summary['user_id'], {})
-                    user_accounts_count = len(user_data.get("accounts", [])) if isinstance(user_data, dict) else 0
-                    details_message += f"   ├─ 👥 Accounts: {user_accounts_count}\n"
-                    
-                    if len(user_summary['countries']) == 1:
-                        details_message += f"   ├─ 🌍 Country: {user_summary['countries'][0]}\n"
-                    elif len(user_summary['countries']) > 1:
-                        details_message += f"   ├─ 🌍 Countries: {', '.join(user_summary['countries'])}\n"
-                    else:
-                        details_message += f"   ├─ 🌍 Countries: All\n"
-                    
-                    details_message += f"   ├─ 🔢 Personal Count: {user_summary['total_count']}\n"
-                    details_message += f"   ├─ 💰 Base Earnings: ${user_summary['personal_usd']:.2f}\n"
-                    
+                    # Add friend details
                     if user_summary['friends_details']:
-                        eligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] >= 10])
-                        ineligible_friends = len([f for f in user_summary['friends_details'] if f['counts'] < 10])
-                        details_message += f"   ├─ 🤝 Total Friends: {len(user_summary['friends_details'])} ({eligible_friends} eligible, {ineligible_friends} <10 counts)\n"
-                        
+                        user_message += f"├─ 📊 Friend Details:\n"
                         for j, friend in enumerate(user_summary['friends_details'], 1):
-                            if friend['counts'] >= 10:
+                            if friend['counts'] >= 1:
                                 friend_telegram_display = f" (@{friend['telegram_username']})" if friend['telegram_username'] else ""
                                 friend_earned = friend['earnings']
                                 friend_earned_bdt = friend_earned * USD_TO_BDT
                                 
-                                # Check if friend is added by others
-                                friend_added_by_list = friend_added_by.get(friend['friend_user_id'], [])
-                                friend_added_by_msg = ""
-                                if len(friend_added_by_list) > 1:  # If added by more than 1 person
-                                    other_adders = [a for a in friend_added_by_list if a['added_by'] != user_summary['username']]
-                                    if other_adders:
-                                        adder_names = []
-                                        for adder in other_adders[:2]:
-                                            if adder['telegram']:
-                                                adder_names.append(f"{adder['added_by']} (@{adder['telegram']})")
-                                            else:
-                                                adder_names.append(adder['added_by'])
-                                        friend_added_by_msg = f" ⚠️ Also added by: {', '.join(adder_names)}"
-                                        if len(other_adders) > 2:
-                                            friend_added_by_msg += f" and {len(other_adders) - 2} more"
-                                
-                                details_message += f"   ├─ 👤 Friend {j}: {friend['name']}{friend_telegram_display}{friend_added_by_msg}\n"
-                                details_message += f"   ├─   ├─ 📱 Accounts: {friend['accounts']}\n"
-                                details_message += f"   ├─   ├─ 🔢 Counts: {friend['counts']} ✅\n"
-                                details_message += f"   ├─   ├─ 💰 Earned: ${friend_earned:.2f}/{friend_earned_bdt:.0f}bdt\n"
+                                user_message += f"├─ {j}. {friend['name']}{friend_telegram_display}\n"
+                                user_message += f"├─   ├─ 📱 Accounts: {friend['accounts']}\n"
                                 
                                 if friend['countries']:
-                                    details_message += f"   ├─   ├─ 🌍 Countries: {', '.join(friend['countries'])}\n"
+                                    if len(friend['countries']) == 1:
+                                        user_message += f"├─   ├─ 🌍 Country: {friend['countries'][0]}\n"
+                                    else:
+                                        user_message += f"├─   ├─ 🌍 Countries: {', '.join(friend['countries'])}\n"
                                 
-                                details_message += f"   ├─   └─ 💸 Commission: ${friend['commission']:.2f}\n"
+                                user_message += f"├─   ├─ 🔢 Counts: {friend['counts']} ✅\n"
+                                user_message += f"├─   ├─ 💰 Earned: ${friend_earned:.2f} ({friend_earned_bdt:.0f} BDT)\n"
+                                user_message += f"├─   └─ 💸 Commission: ${friend['commission']:.2f}\n"
                             else:
-                                details_message += f"   ├─ 👤 Friend {j}: {friend['name']} ❌ <10 counts\n"
-                    else:
-                        details_message += f"   ├─ 🤝 Total Friends: 0 (0 eligible)\n"
+                                user_message += f"├─ {j}. {friend['name']} ❌ <10 counts\n"
+                else:
+                    user_message += f"├─ 🤝 Total Friends: 0 (0 eligible)\n"
+                
+                # Calculate friend earnings for this user
+                friend_earnings = sum(f['earnings'] for f in user_summary['friends_details'])
+                total_all_earnings_user = user_summary['personal_usd'] + friend_earnings + user_summary['total_commission']
+                total_all_bdt_user = total_all_earnings_user * USD_TO_BDT
+                
+                # কাউন্ট সামারি
+                if user_summary['friends_details']:
+                    user_message += f"├─ 📊 Count Summary:\n"
+                    user_message += f"├─   ├─ 🔢 Your Counts: {user_summary['total_count']}\n"
+                    user_message += f"├─   ├─ 👥 Friend Counts: {user_summary['friend_counts']}\n"
+                    user_message += f"├─   └─ 📈 Total Counts: {user_summary['total_counts']}\n"
+                
+                user_message += f"├─ 💰 Total Earnings:\n"
+                user_message += f"├─   ├─ Personal: ${user_summary['personal_usd']:.2f}\n"
+                
+                if friend_earnings > 0:
+                    user_message += f"├─   ├─ Friends Earned: ${friend_earnings:.2f}\n"
+                
+                if user_summary['total_commission'] > 0:
+                    user_message += f"├─   ├─ Commission: ${user_summary['total_commission']:.2f}\n"
+                
+                user_message += f"├─   └─ Total: ${total_all_earnings_user:.2f} ({total_all_bdt_user:.0f} BDT)\n"
+                
+                # Last active time
+                last_active = user_data.get("last_active", "")
+                if last_active:
+                    try:
+                        last_active_time = datetime.fromisoformat(last_active)
+                        time_ago = datetime.now() - last_active_time
+                        if time_ago.days > 0:
+                            last_active_str = f"{time_ago.days} days ago"
+                        elif time_ago.seconds > 3600:
+                            last_active_str = f"{time_ago.seconds // 3600} hours ago"
+                        elif time_ago.seconds > 60:
+                            last_active_str = f"{time_ago.seconds // 60} minutes ago"
+                        else:
+                            last_active_str = "Just now"
+                    except:
+                        last_active_str = "Unknown"
+                else:
+                    last_active_str = "Unknown"
+                
+                user_message += f"└─ ⏰ Last Active: {last_active_str}\n\n"
+                
+                # If user is in someone's friends list, show warning
+                if added_by_list:
+                    names = []
+                    for adder in added_by_list[:2]:  # Show max 2
+                        if adder['telegram']:
+                            names.append(f"{adder['added_by']} (@{adder['telegram']})")
+                        else:
+                            names.append(adder['added_by'])
                     
-                    # Calculate friend earnings for this user
-                    friend_earnings = sum(f['earnings'] for f in user_summary['friends_details'])
-                    total_all_earnings_user = user_summary['personal_usd'] + friend_earnings + user_summary['total_commission']
-                    total_all_bdt_user = total_all_earnings_user * USD_TO_BDT
+                    added_by_message = f"⚠️ Already Added by: {', '.join(names)}"
+                    if len(added_by_list) > 2:
+                        added_by_message += f" and {len(added_by_list) - 2} more"
                     
-                    # কাউন্ট সামারি
-                    if user_summary['friends_details']:
-                        details_message += f"   ├─ 📊 Count Summary:\n"
-                        details_message += f"   ├─   ├─ 🔢 Your Counts: {user_summary['total_count']}\n"
-                        details_message += f"   ├─   ├─ 👥 Friend Counts: {user_summary['friend_counts']}\n"
-                        details_message += f"   ├─   └─ 📈 Total Counts: {user_summary['total_counts']}\n"
-                    
-                    details_message += f"   ├─ 💰 Personal Earnings: ${user_summary['personal_usd']:.2f}\n"
-                    if friend_earnings > 0:
-                        details_message += f"   ├─ 👥 All Friends Earned: ${friend_earnings:.2f}\n"
-                    if user_summary['total_commission'] > 0:
-                        details_message += f"   ├─ 💸 Total Commission: ${user_summary['total_commission']:.2f}\n"
-                    details_message += f"   ├─ 📊 Total (P+F+C): ${total_all_earnings_user:.2f}\n"
-                    details_message += f"   └─ 🇧🇩 Total BDT: {total_all_bdt_user:.0f}\n\n"
+                    user_message += f"{added_by_message}\n\n"
+                else:
+                    user_message += f"[🔄 Payment Pending]\n\n"
                 
-                chunk_personal_counts = sum(u['total_count'] for u in chunk)
-                chunk_friend_counts = sum(u['friend_counts'] for u in chunk)
-                chunk_total_counts = sum(u['total_counts'] for u in chunk)
-                chunk_personal_usd = sum(u['personal_usd'] for u in chunk)
-                chunk_friend_earnings = sum(sum(f['earnings'] for f in u['friends_details']) for u in chunk)
-                chunk_commission = sum(u['total_commission'] for u in chunk)
-                chunk_total = sum(u['total_usd'] for u in chunk)
-                chunk_total_all = chunk_personal_usd + chunk_friend_earnings + chunk_commission
-                chunk_bdt = chunk_total_all * USD_TO_BDT
+                # Create keyboard buttons
+                keyboard = []
                 
-                details_message += f"📊 Chunk {chunk_index + 1} Total:\n"
-                details_message += f"• 👥 Users: {len(chunk)}\n"
-                details_message += f"• 🔢 Personal Counts: {chunk_personal_counts}\n"
-                details_message += f"• 👥 Friend Counts: {chunk_friend_counts}\n"
-                details_message += f"• 📈 Total Counts: {chunk_total_counts}\n"
-                details_message += f"• 💵 Personal USD: ${chunk_personal_usd:.2f}\n"
-                details_message += f"• 👥 Friends Earned: ${chunk_friend_earnings:.2f}\n"
-                details_message += f"• 💸 Commission: ${chunk_commission:.2f}\n"
-                details_message += f"• 💰 Total (P+F+C): ${chunk_total_all:.2f}\n"
-                details_message += f"• 🇧🇩 Total BDT: {chunk_bdt:.0f}\n\n"
+                if not added_by_list and user_summary['has_earnings']:
+                    # Only show payment button if user is not in friends list and has earnings
+                    keyboard.append([
+                        InlineKeyboardButton(
+                            f"✅ Complete {user_summary['username']}", 
+                            callback_data=f"payment_complete_{user_summary['user_id']}_{target_date_str}"
+                        )
+                    ])
                 
-                if chunk_index < total_chunks - 1:
-                    details_message += "⬇️ More details in next message..."
+                keyboard.append([
+                    InlineKeyboardButton(
+                        "📋 Details", 
+                        callback_data=f"payment_details_{user_summary['user_id']}"
+                    )
+                ])
                 
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                # Send individual message for each user
                 try:
                     await context.bot.send_message(
                         ADMIN_ID,
-                        details_message,
+                        user_message,
+                        reply_markup=reply_markup,
                         parse_mode='none'
                     )
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)
                 except Exception as e:
-                    print(f"❌ Error sending chunk {chunk_index + 1}: {e}")
+                    print(f"❌ Error sending user message {user_summary['username']}: {e}")
+            
+            # Send final statistics
+            final_stats = f"📊 Payment Statistics:\n\n"
+            final_stats += f"• 📅 Settlement Date: {target_date_display}\n"
+            final_stats += f"• 👥 Total Users: {total_users}\n"
+            final_stats += f"• ✅ Direct Payment Required: {len([u for u in all_users_summary if not u['in_friends_list']])}\n"
+            final_stats += f"• 👥 Payment via Friends: {len([u for u in all_users_summary if u['in_friends_list']])}\n"
+            final_stats += f"• 💰 Total Amount: ${total_all_earnings:.2f}\n"
+            final_stats += f"• 🇧🇩 Total BDT: {total_all_bdt:.0f}\n\n"
+            final_stats += f"🔄 Payment completion rate: {len([u for u in all_users_summary if not u['in_friends_list']])}/{total_users} users\n"
+            final_stats += f"⏰ Report generated at: {datetime.now().strftime('%H:%M:%S')}"
+            
+            await context.bot.send_message(ADMIN_ID, final_stats, parse_mode='none')
             
         else:
+            # No users with earnings
             summary_message = "🎯 Settlement Rate Update Complete 🎯\n\n"
             
             summary_message += "📊 Operation Summary:\n"
@@ -3690,6 +3702,428 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             "• `/setrate 0.07 canada 0.04 benin 2/12`\n"
             "• `/setrate notice Payment tomorrow`"
         )
+
+# এই কোডটি main() ফাংশনের আগে যুক্ত করুন
+async def handle_payment_callback(update: Update, context: CallbackContext):
+    """Handle payment completion callbacks"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data.startswith('payment_complete_'):
+        # Format: payment_complete_userID_date
+        parts = data.split('_')
+        if len(parts) >= 3:
+            user_id = parts[2]
+            date_str = parts[3] if len(parts) > 3 else datetime.now().strftime('%Y-%m-%d')
+            
+            await complete_user_payment(query, context, user_id, date_str)
+    
+    elif data.startswith('payment_details_'):
+        user_id = data.split('_')[2]
+        await show_user_payment_details(query, context, user_id)
+
+async def complete_user_payment(query, context, user_id, date_str):
+    """Complete payment for a specific user"""
+    await query.edit_message_text(f"🔄 Completing payment for user {user_id}...")
+    
+    try:
+        # Get user info
+        accounts = load_accounts()
+        user_data = accounts.get(user_id, {})
+        
+        if not user_data:
+            await query.edit_message_text(f"❌ User {user_id} not found!")
+            return
+        
+        user_accounts = user_data.get("accounts", [])
+        username = user_accounts[0].get('username', 'Unknown') if user_accounts else 'Unknown'
+        telegram_username = user_accounts[0].get('telegram_username', '') if user_accounts else ''
+        
+        # Get user's payment details from the message text
+        original_text = query.message.text
+        
+        # Parse amounts from message
+        import re
+        
+        # Extract values from the original message
+        personal_earnings = 0
+        friend_earnings = 0
+        commission = 0
+        total_usd = 0
+        total_bdt = 0
+        personal_count = 0
+        friend_count = 0
+        friends_details = []
+        
+        # Extract personal earnings
+        personal_match = re.search(r'Personal Earnings: \$([\d\.]+)', original_text)
+        if personal_match:
+            personal_earnings = float(personal_match.group(1))
+        
+        # Extract friend earnings
+        friend_match = re.search(r'Friends Earned: \$([\d\.]+)', original_text)
+        if friend_match:
+            friend_earnings = float(friend_match.group(1))
+        
+        # Extract commission
+        commission_match = re.search(r'Total Commission: \$([\d\.]+)', original_text)
+        if commission_match:
+            commission = float(commission_match.group(1))
+        
+        # Extract total USD
+        total_match = re.search(r'Total: \$([\d\.]+)', original_text)
+        if total_match:
+            total_usd = float(total_match.group(1))
+        
+        # Extract total BDT - FIXED: Always calculate from USD
+        total_bdt = total_usd * 125  # Fixed exchange rate 1 USD = 125 BDT
+        
+        # Extract personal count
+        count_match = re.search(r'Personal Count: ([\d,\.]+)', original_text)
+        if count_match:
+            personal_count_str = count_match.group(1).replace(',', '')
+            personal_count = int(float(personal_count_str))
+        
+        # Extract friend count
+        friend_count_match = re.search(r'Friend Counts: ([\d,\.]+)', original_text)
+        if friend_count_match:
+            friend_count_str = friend_count_match.group(1).replace(',', '')
+            friend_count = int(float(friend_count_str))
+        
+        # Extract commission rate - FIXED calculation
+        if friend_count > 0 and commission == 0:
+            commission = friend_count * 0.002  # $0.002 per count
+        
+        # Extract ALL friends list from the message (not just first 5)
+        # Pattern to match all friend entries
+        friend_pattern = r'(\d+)\. ([^\n]+?)(?=\n\d+\. |\n├─|$)'  # Match complete friend blocks
+        friend_sections = re.findall(friend_pattern, original_text, re.DOTALL)
+        
+        if not friend_sections:
+            # Alternative pattern for friend details
+            friend_pattern2 = r'\d+\. ([^\n@]+)(?: @([^\n]+))?(?:\n├─[^\n]*)*\n├─[^\n]*Earned: \$([\d\.]+)'
+            friend_matches = re.findall(friend_pattern2, original_text)
+            
+            for friend_match in friend_matches:
+                if len(friend_match) >= 3:
+                    friend_name = friend_match[0].strip()
+                    friend_telegram = friend_match[1].strip() if friend_match[1] else ""
+                    friend_amount = float(friend_match[2]) if friend_match[2] else 0
+                    
+                    friends_details.append({
+                        'name': friend_name,
+                        'telegram': friend_telegram,
+                        'amount': friend_amount
+                    })
+        else:
+            for friend_num, friend_section in friend_sections:
+                # Extract friend name
+                name_match = re.search(r'(\d+)\. ([^\n]+)', friend_section)
+                if name_match:
+                    friend_name = name_match.group(2).strip()
+                    
+                    # Extract telegram username
+                    telegram_match = re.search(r'@([^\s\)]+)', friend_name)
+                    friend_telegram = ""
+                    if telegram_match:
+                        friend_telegram = telegram_match.group(1)
+                        friend_name = friend_name.replace(f"@{friend_telegram}", "").strip()
+                    
+                    # Extract amount
+                    amount_match = re.search(r'Earned: \$([\d\.]+)', friend_section)
+                    friend_amount = 0
+                    if amount_match:
+                        friend_amount = float(amount_match.group(1))
+                    
+                    friends_details.append({
+                        'name': friend_name,
+                        'telegram': friend_telegram,
+                        'amount': friend_amount
+                    })
+        
+        # If we couldn't extract from pattern, try manual extraction
+        if not friends_details:
+            # Try to find all friend names and amounts
+            lines = original_text.split('\n')
+            current_friend = None
+            for line in lines:
+                if line.strip().startswith(tuple(f'{i}.' for i in range(1, 20))):
+                    # This is a friend line
+                    parts = line.strip().split('.', 1)
+                    if len(parts) > 1:
+                        friend_info = parts[1].strip()
+                        # Remove any telegram handle
+                        if '@' in friend_info:
+                            friend_name = friend_info.split('@')[0].strip()
+                        else:
+                            friend_name = friend_info
+                        current_friend = {'name': friend_name, 'telegram': '', 'amount': 0}
+                elif current_friend and 'Earned:' in line and '$' in line:
+                    # Extract amount
+                    amount_match = re.search(r'\$([\d\.]+)', line)
+                    if amount_match:
+                        current_friend['amount'] = float(amount_match.group(1))
+                        friends_details.append(current_friend.copy())
+                        current_friend = None
+        
+        # Get current date
+        current_date = datetime.now().strftime('%d %B %Y')
+        current_time = datetime.now().strftime('%H:%M:%S')
+        
+        # 1. Send notification to the user getting paid - SHOW ALL FRIENDS
+        user_notification = f"✨ Payment Complete Notification ✨\n\n"
+        user_notification += f"✅ Your settlement payment has been processed!\n\n"
+        user_notification += f"📅 Settlement Date: {current_date}\n"
+        user_notification += f"👤 Username: {username}\n"
+        
+        if telegram_username:
+            user_notification += f"📱 Telegram: @{telegram_username}\n"
+        
+        user_notification += f"💰 Total Amount: ${total_usd:.2f} USD\n"
+        user_notification += f"🇧🇩 Converted: {total_bdt:.0f} BDT (${total_usd:.2f} × 125)\n\n"
+        
+        if personal_count > 0:
+            user_notification += f"🔢 Your Counts: {personal_count}\n\n"
+        
+        user_notification += f"📊 Your Earnings Summary:\n"
+        user_notification += f"├─ 💵 Personal Earnings: ${personal_earnings:.2f} ({personal_count} counts)\n"
+        
+        if friends_details:
+            user_notification += f"├─ 👥 {len(friends_details)} Friends Performance:\n"
+            # Show ALL friends, not just first 5
+            for i, friend in enumerate(friends_details, 1):
+                friend_display = friend['name']
+                if friend['telegram']:
+                    friend_display += f" (@{friend['telegram']})"
+                
+                user_notification += f"├─ {i}. {friend_display}: ${friend['amount']:.2f}\n"
+        
+        # Commission calculation fix
+        if friend_count > 0:
+            calculated_commission = friend_count * 0.002
+            user_notification += f"├─ 💸 Commission: ${calculated_commission:.2f} ({friend_count} × $0.002)\n"
+        else:
+            user_notification += f"├─ 💸 Commission: $0.00\n"
+        
+        user_notification += f"└─ 📈 Total: ${total_usd:.2f} ({total_bdt:.0f} BDT)\n\n"
+        
+        # Add ALL friends to collect from
+        if friends_details:
+            user_notification += f"🤝 Friends to Collect From ({len(friends_details)} friends):\n"
+            total_friends_amount = 0
+            
+            for i, friend in enumerate(friends_details, 1):
+                friend_display = friend['name']
+                if friend['telegram']:
+                    friend_display += f" (@{friend['telegram']})"
+                
+                friend_bdt = friend['amount'] * 125
+                total_friends_amount += friend['amount']
+                user_notification += f"• {friend_display} - ${friend['amount']:.2f} ({friend_bdt:.0f} BDT)\n"
+            
+            total_friends_bdt = total_friends_amount * 125
+            user_notification += f"\n💰 Total to collect from friends: ${total_friends_amount:.2f} ({total_friends_bdt:.0f} BDT)\n\n"
+        
+        user_notification += f"🏦 Payment Status: ✅ COMPLETED\n\n"
+        
+        user_notification += f"💡 Important Notes:\n"
+        user_notification += f"• Your payment of ${total_usd:.2f} ({total_bdt:.0f} BDT) has been sent to your account\n"
+        
+        if friends_details:
+            user_notification += f"• Please collect from your {len(friends_details)} friends as listed above\n"
+        
+        user_notification += f"• Contact admin if you face any issues\n\n"
+        
+        user_notification += f"⏰ Payment Time: {current_time}\n"
+        user_notification += f"📨 Transaction ID: PAY-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        
+        user_notified = False
+        try:
+            await context.bot.send_message(
+                int(user_id),
+                user_notification,
+                parse_mode='none'
+            )
+            user_notified = True
+            print(f"✅ Notification sent to user {user_id}")
+        except Exception as e:
+            print(f"❌ Could not notify user {user_id}: {e}")
+        
+        # 2. Send notifications to ALL friends
+        friends_notified = 0
+        for friend in friends_details:
+            # Find friend's user ID from accounts
+            friend_user_id = None
+            for acc_id, acc_data in accounts.items():
+                if acc_id == str(ADMIN_ID):
+                    continue
+                
+                acc_accounts = acc_data.get("accounts", [])
+                if acc_accounts:
+                    acc_username = acc_accounts[0].get('username', '')
+                    acc_telegram = acc_accounts[0].get('telegram_username', '')
+                    
+                    # Match by username or telegram
+                    if (friend['name'].lower() in acc_username.lower() or 
+                        (friend['telegram'] and friend['telegram'].lower() == acc_telegram.lower())):
+                        friend_user_id = acc_id
+                        break
+            
+            if friend_user_id and friend['amount'] > 0:
+                friend_notification = f"📢 Payment Notification from Your Friend ✨\n\n"
+                friend_notification += f"👤 Your Friend: {username}"
+                if telegram_username:
+                    friend_notification += f" (@{telegram_username})"
+                friend_notification += f"\n\n"
+                
+                friend_notification += f"💰 Your Settlement Details:\n"
+                friend_notification += f"├─ 📅 Date: {current_date}\n"
+                friend_notification += f"├─ 🔢 Your Counts: Included in settlement\n"
+                friend_notification += f"├─ 💰 Amount: ${friend['amount']:.2f} USD\n"
+                friend_notification += f"├─ 🇧🇩 BDT: {friend['amount'] * 125:.0f}\n"
+                friend_notification += f"└─ 🤝 Status: Ready for Collection\n\n"
+                
+                friend_notification += f"📊 Payment Breakdown:\n"
+                friend_notification += f"• Total Amount: ${friend['amount']:.2f}\n"
+                friend_notification += f"• Converted: {friend['amount'] * 125:.0f} BDT\n\n"
+                
+                friend_notification += f"💡 Important Instructions:\n"
+                friend_notification += f"• Your friend {username} has processed your settlement\n"
+                friend_notification += f"• Please collect ${friend['amount']:.2f} ({friend['amount'] * 125:.0f} BDT) from them\n"
+                friend_notification += f"• Contact them directly for payment collection\n\n"
+                
+                friend_notification += f"⏰ Notification Time: {current_time}\n"
+                friend_notification += f"📨 Transaction ID: REF-{datetime.now().strftime('%Y%m%d-%H%M%S')}\n\n"
+                friend_notification += f"✅ Your payment is ready! Contact your friend now."
+                
+                try:
+                    await context.bot.send_message(
+                        int(friend_user_id),
+                        friend_notification,
+                        parse_mode='none'
+                    )
+                    friends_notified += 1
+                    print(f"✅ Notification sent to friend {friend_user_id}")
+                except Exception as e:
+                    print(f"❌ Could not notify friend {friend_user_id}: {e}")
+        
+        # 3. Update admin message
+        if "[🔄 Payment Pending]" in original_text:
+            updated_text = original_text.replace("[🔄 Payment Pending]", "[✅ Payment Completed]")
+        else:
+            updated_text = original_text + f"\n\n✅ Payment Completed\n⏰ Time: {current_time}"
+        
+        # Add notification status
+        notification_status = f"\n📨 Notifications: "
+        if user_notified:
+            notification_status += f"✅ User"
+            if friends_notified > 0:
+                notification_status += f", 👥 {friends_notified} friends"
+        else:
+            notification_status += f"❌ Failed"
+        
+        updated_text += notification_status
+        
+        # Create new keyboard without payment button
+        keyboard = []
+        
+        # Add details button
+        keyboard.append([
+            InlineKeyboardButton("📋 Details", callback_data=f"payment_details_{user_id}")
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            updated_text,
+            reply_markup=reply_markup,
+            parse_mode='none'
+        )
+        
+        # 4. Send confirmation to admin - FIXED BDT calculation
+        confirmation = f"✅ Payment Completed Successfully!\n\n"
+        confirmation += f"👤 User: {username} (ID: {user_id})\n"
+        
+        if telegram_username:
+            confirmation += f"📱 Telegram: @{telegram_username}\n"
+        
+        confirmation += f"📅 Date: {current_date}\n"
+        confirmation += f"⏰ Time: {current_time}\n"
+        confirmation += f"💰 Total Amount: ${total_usd:.2f} USD\n"
+        confirmation += f"🇧🇩 BDT: {total_bdt:.0f} (${total_usd:.2f} × 125)\n\n"
+        
+        confirmation += f"📊 Breakdown:\n"
+        confirmation += f"• Personal: ${personal_earnings:.2f} ({personal_count} counts)\n"
+        if friend_earnings > 0:
+            confirmation += f"• Friends Earned: ${friend_earnings:.2f} ({friend_count} counts)\n"
+        
+        # Commission calculation
+        if friend_count > 0:
+            calculated_commission = friend_count * 0.002
+            confirmation += f"• Commission: ${calculated_commission:.2f} ({friend_count} × $0.002)\n\n"
+        else:
+            confirmation += f"• Commission: $0.00\n\n"
+        
+        confirmation += f"📨 Notifications Sent:\n"
+        confirmation += f"• ✅ To User: {'✅ Yes' if user_notified else '❌ No'}\n"
+        
+        if friends_notified > 0:
+            confirmation += f"• 👥 To Friends: {friends_notified} users\n"
+        else:
+            confirmation += f"• 👥 To Friends: No friends to notify\n"
+        
+        confirmation += f"\n✅ Payment marked as completed in system."
+        
+        await context.bot.send_message(ADMIN_ID, confirmation, parse_mode='none')
+        
+    except Exception as e:
+        print(f"❌ Error completing payment: {e}")
+        await query.edit_message_text(f"❌ Error completing payment: {e}")
+
+async def show_user_payment_details(query, context, user_id):
+    """Show detailed payment information for a user"""
+    await query.answer("Fetching details...")
+    
+    # Get user details from accounts
+    accounts = load_accounts()
+    user_data = accounts.get(user_id, {})
+    
+    if not user_data:
+        await query.edit_message_text(f"❌ User {user_id} not found!")
+        return
+    
+    user_accounts = user_data.get("accounts", [])
+    username = user_accounts[0].get('username', 'Unknown') if user_accounts else 'Unknown'
+    telegram_username = user_accounts[0].get('telegram_username', '') if user_accounts else ''
+    
+    details = f"📋 Payment Details for {username}\n\n"
+    details += f"🆔 User ID: {user_id}\n"
+    details += f"👤 Telegram: @{telegram_username if telegram_username else 'N/A'}\n"
+    details += f"📱 Accounts: {len(user_accounts)}\n"
+    details += f"⏰ Last Active: {user_data.get('last_active', 'N/A')}\n\n"
+    
+    # Show account details
+    details += "🔐 Account Information:\n"
+    for i, acc in enumerate(user_accounts, 1):
+        status = "✅" if acc.get('active', True) else "❌"
+        login_status = "🔓" if acc.get('token') else "🔒"
+        details += f"{i}. {status}{login_status} {acc.get('custom_name', acc['username'])}\n"
+    
+    # Add close button
+    keyboard = [
+        [InlineKeyboardButton("❌ Close", callback_data="close_details")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.reply_text(
+        details,
+        reply_markup=reply_markup,
+        parse_mode='none'
+    )
+
+
 
 async def admin_add_account(update: Update, context: CallbackContext) -> None:
     if update.effective_user.id != ADMIN_ID:
@@ -3985,6 +4419,54 @@ async def handle_settlement_callback(update: Update, context: CallbackContext):
 async def start(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     
+    # চ্যানেল মেম্বারশিপ চেক
+    REQUIRED_CHANNEL = "@CashxByte"  # আপনার চ্যানেল ইউজারনেম
+    
+    try:
+        # ইউজার চ্যানেলের মেম্বার কিনা চেক করুন
+        member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+        
+        # শুধুমাত্র মেম্বার/অ্যাডমিন/ক্রিয়েটরদের জন্য অনুমতি
+        allowed_status = ['member', 'administrator', 'creator']
+        
+        if member.status not in allowed_status:
+            # চ্যানেল জয়েন করার জন্য ইনভাইট লিঙ্ক
+            invite_link = "https://t.me/CashxByte"
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ Join Channel", url=invite_link)],
+                [InlineKeyboardButton("🔄 Already Joined", callback_data="check_membership")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"❌ **Channel Membership Required!**\n\n"
+                f"To use this bot, you must join our official channel:\n"
+                f"📢 {REQUIRED_CHANNEL}\n\n"
+                f"➡️ Please join the channel first\n"
+                f"➡️ Then click 'Already Joined' button\n\n"
+                f"🔗 Channel Link: {invite_link}",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+    except Exception as e:
+        print(f"⚠️ Channel check error: {e}")
+        # If there's an error checking membership, you can decide what to do
+        # Option 1: Allow anyway (for debugging)
+        # Option 2: Block access
+        # For now, I'll allow but you can change this
+        
+        await update.message.reply_text(
+            f"⚠️ Unable to verify channel membership. Please make sure:\n"
+            f"1. You've joined @CashxByte\n"
+            f"2. The bot has admin rights in that channel\n\n"
+            f"Contact admin if problem persists.",
+            parse_mode='Markdown'
+        )
+        # return  # Uncomment to block if verification fails
+    
+    # যদি চ্যানেলের মেম্বার হয়, তাহলে নরমাল প্রসেস চালিয়ে যান
     try:
         user = update.effective_user
         user_info = f"""
@@ -4055,6 +4537,54 @@ async def start(update: Update, context: CallbackContext) -> None:
         f"💡 OTP Tip: Reply to any 'In Progress' number with OTP code",
         reply_markup=reply_markup
     )
+
+async def handle_membership_check(update: Update, context: CallbackContext):
+    """Check membership again when user clicks 'Already Joined'"""
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "check_membership":
+        user_id = query.from_user.id
+        REQUIRED_CHANNEL = "@CashxByte"
+        
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            
+            if member.status in allowed_status:
+                # ইউজারকে /start কমান্ড পুনরায় রান করতে বলুন
+                await query.edit_message_text(
+                    "✅ **Membership Verified!**\n\n"
+                    "You have successfully joined the channel.\n"
+                    "Now please use /start command again to access the bot.",
+                    parse_mode='Markdown'
+                )
+            else:
+                invite_link = "https://t.me/CashxByte"
+                keyboard = [
+                    [InlineKeyboardButton("✅ Join Channel", url=invite_link)],
+                    [InlineKeyboardButton("🔄 Check Again", callback_data="check_membership")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await query.edit_message_text(
+                    f"❌ **Still Not a Member!**\n\n"
+                    f"Please join our channel first:\n"
+                    f"📢 {REQUIRED_CHANNEL}\n\n"
+                    f"Click the button below to join,\n"
+                    f"then click 'Check Again'.",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+        except Exception as e:
+            print(f"⚠️ Membership re-check error: {e}")
+            await query.edit_message_text(
+                f"⚠️ Error verifying membership. Please try again later.\n"
+                f"Make sure you've joined @CashxByte",
+                parse_mode='Markdown'
+            )
+
+
 
 async def show_accounts_menu(update: Update, context: CallbackContext):
     """Show accounts selection menu"""
@@ -5006,7 +5536,7 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
 
-    # ✅ Account system (UPDATED & CLEAN)
+    # ✅ Account system
     application.add_handler(CommandHandler("addacc", admin_add_account_custom))
     application.add_handler(CommandHandler("removeacc", admin_remove_account))
     application.add_handler(CommandHandler("accounts", show_accounts_menu))
@@ -5022,21 +5552,37 @@ def main():
 
     # ───────────────── CALLBACK HANDLERS ─────────────────
 
-    # Statistics callbacks
+    # 📊 Statistics callbacks
     application.add_handler(
         CallbackQueryHandler(handle_statistics_callback, pattern=r"^stats_")
     )
 
-    # Settlement callbacks
+    # 💰 Settlement callbacks
     application.add_handler(
         CallbackQueryHandler(handle_settlement_callback, pattern=r"^settlement_")
     )
 
-    # Account menu callbacks
+    # 👤 Account menu callbacks
     application.add_handler(
         CallbackQueryHandler(
             handle_account_selection,
             pattern=r"^(select_account_|refresh_all_accounts|close_accounts_menu|back_to_accounts|start_checking)"
+        )
+    )
+
+    # 💳 Payment callbacks
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_payment_callback,
+            pattern=r"^(payment_complete_|payment_details_|close_details)"
+        )
+    )
+
+    # 🧾 Membership check callback (🆕 NEW)
+    application.add_handler(
+        CallbackQueryHandler(
+            handle_membership_check,
+            pattern=r"^check_membership$"
         )
     )
 
