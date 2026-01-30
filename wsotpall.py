@@ -783,8 +783,20 @@ async def show_admin_statistics(update: Update, context: CallbackContext):
     await context.bot.send_message(ADMIN_ID, final_message, parse_mode='none')
 
 async def statistics_command(update: Update, context: CallbackContext):
-    """Handle /statistics command for both users and admin"""
     user_id = update.effective_user.id
+    
+    # ✅ চ্যানেল মেম্বারশিপ চেক
+    if user_id != ADMIN_ID:
+        REQUIRED_CHANNEL = "@CashxByte"
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            if member.status not in allowed_status:
+                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+                return
+        except:
+            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+            return
     
     if user_id == ADMIN_ID:
         # Admin sees two buttons: Top Performers and All Statistics
@@ -2385,11 +2397,19 @@ async def delete_if_exists(session, token, phone, username):
 
 async def show_user_settlements(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    user_id_str = str(user_id)
     
-    if user_id_str not in account_manager.user_tokens or not account_manager.user_tokens[user_id_str]:
-        await update.message.reply_text("❌ No active accounts found!")
-        return
+    # ✅ চ্যানেল মেম্বারশিপ চেক
+    if user_id != ADMIN_ID:
+        REQUIRED_CHANNEL = "@CashxByte"
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            if member.status not in allowed_status:
+                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+                return
+        except:
+            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+            return
     
     token = account_manager.user_tokens[user_id_str][0]
     
@@ -4587,9 +4607,20 @@ async def handle_membership_check(update: Update, context: CallbackContext):
 
 
 async def show_accounts_menu(update: Update, context: CallbackContext):
-    """Show accounts selection menu"""
     user_id = update.effective_user.id
-    user_id_str = str(user_id)
+    
+    # ✅ চ্যানেল মেম্বারশিপ চেক
+    if user_id != ADMIN_ID:
+        REQUIRED_CHANNEL = "@CashxByte"
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            if member.status not in allowed_status:
+                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+                return
+        except:
+            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+            return
     
     accounts = load_accounts()
     
@@ -4940,6 +4971,19 @@ async def admin_add_account_custom(update: Update, context: CallbackContext) -> 
 
 async def refresh_server(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
+    
+    # ✅ চ্যানেল মেম্বারশিপ চেক
+    if user_id != ADMIN_ID:
+        REQUIRED_CHANNEL = "@CashxByte"
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            if member.status not in allowed_status:
+                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+                return
+        except:
+            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
+            return
     
     processing_msg = await update.message.reply_text("🔄 Refreshing your accounts...")
     
@@ -5359,6 +5403,51 @@ async def process_multiple_numbers(update: Update, context: CallbackContext, tex
 async def handle_message_optimized(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     
+    # ✅ প্রথমে চ্যানেল মেম্বারশিপ চেক - সব মেসেজের জন্য
+    REQUIRED_CHANNEL = "@CashxByte"
+    
+    # Admin এর জন্য চেক করবেন না
+    if user_id != ADMIN_ID:
+        try:
+            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+            allowed_status = ['member', 'administrator', 'creator']
+            
+            if member.status not in allowed_status:
+                # চ্যানেল জয়েন করার জন্য ইনভাইট লিঙ্ক
+                invite_link = "https://t.me/CashxByte"
+                
+                keyboard = [
+                    [InlineKeyboardButton("✅ Join Channel", url=invite_link)],
+                    [InlineKeyboardButton("🔄 Check Again", callback_data="check_membership")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"❌ **Channel Membership Required!**\n\n"
+                    f"To use this bot, you must join our official channel:\n"
+                    f"📢 {REQUIRED_CHANNEL}\n\n"
+                    f"➡️ Please join the channel first\n"
+                    f"➡️ Then use /start command again\n\n"
+                    f"🔗 Channel Link: {invite_link}",
+                    reply_markup=reply_markup,
+                    parse_mode='Markdown'
+                )
+                return  # ❌ চ্যানেল জয়েন না করলে বন্ধ হয়ে যাবে
+        except Exception as e:
+            print(f"⚠️ Channel check error: {e}")
+            # যদি চেক করতে সমস্যা হয়, তাহলে ইউজারকে ব্লক করুন
+            await update.message.reply_text(
+                f"❌ **Verification Failed!**\n\n"
+                f"Unable to verify your channel membership.\n"
+                f"Please make sure:\n"
+                f"1. You've joined @CashxByte\n"
+                f"2. You're not restricted from the channel\n\n"
+                f"After joining, please use /start command again.",
+                parse_mode='Markdown'
+            )
+            return  # ❌ ভেরিফিকেশন ফেইল হলে ব্লক
+    
+    # ✅ যদি চ্যানেলের মেম্বার হয়, তাহলে নরমাল প্রসেস চালিয়ে যান
     # Check if user has accounts
     if account_manager.get_user_accounts_count(user_id) == 0 and user_id != ADMIN_ID:
         await update.message.reply_text(
