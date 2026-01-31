@@ -2397,19 +2397,11 @@ async def delete_if_exists(session, token, phone, username):
 
 async def show_user_settlements(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
+    user_id_str = str(user_id)
     
-    # ✅ চ্যানেল মেম্বারশিপ চেক
-    if user_id != ADMIN_ID:
-        REQUIRED_CHANNEL = "@CashxByte"
-        try:
-            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
-            allowed_status = ['member', 'administrator', 'creator']
-            if member.status not in allowed_status:
-                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
-                return
-        except:
-            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
-            return
+    if user_id_str not in account_manager.user_tokens or not account_manager.user_tokens[user_id_str]:
+        await update.message.reply_text("❌ No active accounts found!")
+        return
     
     token = account_manager.user_tokens[user_id_str][0]
     
@@ -4439,27 +4431,7 @@ async def handle_settlement_callback(update: Update, context: CallbackContext):
 async def start(update: Update, context: CallbackContext) -> None:
     user_id = update.effective_user.id
     
-    # ✅ প্রথমে নিউ ইউজার মেসেজ পাঠান (চ্যানেল চেকের আগে)
-    try:
-        user = update.effective_user
-        user_info = f"""
-🆕 New User Started Bot 🆕
-
-👤 Full Name: {user.full_name or 'N/A'}
-🆔 User ID: `{user.id}`
-📛 Username: @{user.username if user.username else 'N/A'}
-📅 Date: {datetime.now().strftime('%d %B %Y, %H:%M:%S')}
-        """
-        
-        await context.bot.send_message(
-            chat_id="@Wsalluser",
-            text=user_info,
-            parse_mode='none'
-        )
-    except Exception as e:
-        print(f"⚠️ Failed to send user info to group: {e}")
-    
-    # 🔒 এখন চ্যানেল মেম্বারশিপ চেক
+    # চ্যানেল মেম্বারশিপ চেক
     REQUIRED_CHANNEL = "@CashxByte"  # আপনার চ্যানেল ইউজারনেম
     
     try:
@@ -4489,22 +4461,43 @@ async def start(update: Update, context: CallbackContext) -> None:
                 reply_markup=reply_markup,
                 parse_mode='Markdown'
             )
-            return  # ❌ চ্যানেল জয়েন না করলে বন্ধ হয়ে যাবে
+            return
     except Exception as e:
         print(f"⚠️ Channel check error: {e}")
-        # যদি চেক করতে সমস্যা হয়, তাহলে ইউজারকে ব্লক করুন
+        # If there's an error checking membership, you can decide what to do
+        # Option 1: Allow anyway (for debugging)
+        # Option 2: Block access
+        # For now, I'll allow but you can change this
+        
         await update.message.reply_text(
-            f"❌ **Verification Failed!**\n\n"
-            f"Unable to verify your channel membership.\n"
-            f"Please make sure:\n"
+            f"⚠️ Unable to verify channel membership. Please make sure:\n"
             f"1. You've joined @CashxByte\n"
-            f"2. You're not restricted from the channel\n\n"
-            f"After joining, please try /start again.",
+            f"2. The bot has admin rights in that channel\n\n"
+            f"Contact admin if problem persists.",
             parse_mode='Markdown'
         )
-        return  # ❌ ভেরিফিকেশন ফেইল হলে ব্লক
+        # return  # Uncomment to block if verification fails
     
-    # ✅ যদি চ্যানেলের মেম্বার হয়, তাহলে নরমাল প্রসেস চালিয়ে যান
+    # যদি চ্যানেলের মেম্বার হয়, তাহলে নরমাল প্রসেস চালিয়ে যান
+    try:
+        user = update.effective_user
+        user_info = f"""
+🆕 New User Started Bot 🆕
+
+👤 Full Name: {user.full_name or 'N/A'}
+🆔 User ID: `{user.id}`
+📛 Username: @{user.username if user.username else 'N/A'}
+📅 Date: {datetime.now().strftime('%d %B %Y, %H:%M:%S')}
+        """
+        
+        await context.bot.send_message(
+            chat_id="@Wsalluser",
+            text=user_info,
+            parse_mode='none'
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to send user info to group: {e}")
+    
     active_accounts = await account_manager.initialize_user(user_id)
     
     if user_id == ADMIN_ID:
@@ -4606,20 +4599,9 @@ async def handle_membership_check(update: Update, context: CallbackContext):
 
 
 async def show_accounts_menu(update: Update, context: CallbackContext):
+    """Show accounts selection menu"""
     user_id = update.effective_user.id
-    
-    # ✅ চ্যানেল মেম্বারশিপ চেক
-    if user_id != ADMIN_ID:
-        REQUIRED_CHANNEL = "@CashxByte"
-        try:
-            member = await context.bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
-            allowed_status = ['member', 'administrator', 'creator']
-            if member.status not in allowed_status:
-                await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
-                return
-        except:
-            await update.message.reply_text("❌ Please join @CashxByte first to use this feature.")
-            return
+    user_id_str = str(user_id)
     
     accounts = load_accounts()
     
