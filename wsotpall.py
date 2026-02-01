@@ -2744,237 +2744,256 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 except:
                     pass
             
-            user_token = None
-            token_refreshed = False
+            # ============ IMPORTANT CHANGE: Process ALL accounts for user ============
+            user_total_count = 0
+            user_total_usd = 0
+            user_country_totals = {}
+            user_accounts_with_settlements = []
+            user_all_filtered_settlements = []
             
-            if user_id_str in account_manager.user_tokens and account_manager.user_tokens[user_id_str]:
-                user_token = account_manager.user_tokens[user_id_str][0]
+            # Process each account separately
+            for acc_idx, account in enumerate(user_accounts):
+                print(f"\n📊 Processing account {acc_idx + 1}/{len(user_accounts)} for user {username}")
                 
-                async with aiohttp.ClientSession() as session:
-                    status_code, _, _ = await get_status_async(session, user_token, "0000000000")
+                account_name = account.get('custom_name', account['username'])
+                account_username = account['username']
+                account_password = account['password']
                 
-                if status_code == -1:
-                    user_token = None
-            
-            if not user_token:
-                for acc in user_accounts:
-                    if not acc.get('active', True):
-                        continue
-                    
-                    token, api_user_id, nickname = await login_api_async(acc['username'], acc['password'])
+                # Login to this specific account
+                account_token = None
+                account_api_user_id = None
+                
+                # Try existing token first
+                if account.get('token'):
+                    async with aiohttp.ClientSession() as session:
+                        status_code, _, _ = await get_status_async(session, account['token'], "0000000000")
+                    if status_code != -1:
+                        account_token = account['token']
+                        account_api_user_id = account.get('api_user_id')
+                        print(f"✅ Using existing token for account {account_name}")
+                
+                # If no valid token, login fresh
+                if not account_token:
+                    print(f"🔄 Logging into account {account_name}")
+                    token, api_user_id, nickname = await login_api_async(account_username, account_password)
                     if token:
-                        acc['token'] = token
-                        acc['api_user_id'] = api_user_id
-                        acc['nickname'] = nickname
-                        acc['last_login'] = datetime.now().isoformat()
+                        account_token = token
+                        account_api_user_id = api_user_id
                         
-                        user_token = token
-                        token_refreshed = True
+                        # Update account in database
+                        account['token'] = token
+                        account['api_user_id'] = api_user_id
+                        account['nickname'] = nickname
+                        account['last_login'] = datetime.now().isoformat()
+                        
                         users_token_refreshed += 1
-                        break
-            
-            if not user_token:
-                users_failed += 1
-                continue
-            
-            save_accounts(accounts)
-            
-            api_user_id = None
-            for acc in user_accounts:
-                if acc.get('token') == user_token:
-                    api_user_id = acc.get('api_user_id')
-                    break
-            
-            if not api_user_id:
-                users_failed += 1
-                continue
-            
-            try:
-                print(f"\n📊 Processing user: {username} (ID: {user_id_str})")
+                        print(f"✅ Login successful for account {account_name}")
+                    else:
+                        print(f"❌ Login failed for account {account_name}")
+                        continue
                 
-                # ১. ইউজারের নিজের settlement চেক করা
-                user_filtered_settlements = []
-                country_totals = {}
-                total_count = 0
-                total_usd_user = 0
-                
-                async with aiohttp.ClientSession() as session:
-                    settlement_data, error = await get_user_settlements(session, user_token, str(api_user_id), page=1, page_size=100)
-                
-                if not error and settlement_data and settlement_data.get('records'):
-                    for record in settlement_data.get('records', []):
-                        gmt_create = record.get('gmtCreate')
-                        if not gmt_create:
+                # Get settlements for this account
+                if account_token and account_api_user_id:
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            settlement_data, error = await get_user_settlements(
+                                session, account_token, str(account_api_user_id), page=1, page_size=100
+                            )
+                        
+                        if error:
+                            print(f"❌ Error fetching settlements for account {account_name}: {error}")
                             continue
                         
-                        try:
-                            if 'T' in gmt_create:
-                                record_date = datetime.fromisoformat(gmt_create.replace('Z', '+00:00')).date()
-                            else:
-                                record_date = datetime.strptime(gmt_create, '%Y-%m-%d %H:%M:%S').date()
-                            
-                            if record_date != target_date:
-                                continue
-                            
-                            country = record.get('countryName') or record.get('country') or 'Unknown'
-                            # Clean country name
-                            country = country.strip(', ')
-                            
-                            # Check if this country is included in our rates
-                            if country_rates:
-                                country_matched = False
-                                matched_country = None
-                                
-                                for target_country in country_rates.keys():
-                                    if target_country.lower() in country.lower() or country.lower() in target_country.lower():
-                                        country_matched = True
-                                        matched_country = target_country
-                                        break
-                                
-                                if not country_matched:
+                        account_filtered_settlements = []
+                        account_country_totals = {}
+                        
+                        if settlement_data and settlement_data.get('records'):
+                            for record in settlement_data.get('records', []):
+                                gmt_create = record.get('gmtCreate')
+                                if not gmt_create:
                                     continue
-                            # If no country rates specified, use default rate
-                            elif not default_rate:
-                                continue
+                                
+                                try:
+                                    if 'T' in gmt_create:
+                                        record_date = datetime.fromisoformat(gmt_create.replace('Z', '+00:00')).date()
+                                    else:
+                                        record_date = datetime.strptime(gmt_create, '%Y-%m-%d %H:%M:%S').date()
+                                    
+                                    if record_date != target_date:
+                                        continue
+                                    
+                                    country = record.get('countryName') or record.get('country') or 'Unknown'
+                                    # Clean country name
+                                    country = country.strip(', ')
+                                    
+                                    # Check if this country is included in our rates
+                                    if country_rates:
+                                        country_matched = False
+                                        matched_country = None
+                                        
+                                        for target_country in country_rates.keys():
+                                            if target_country.lower() in country.lower() or country.lower() in target_country.lower():
+                                                country_matched = True
+                                                matched_country = target_country
+                                                break
+                                        
+                                        if not country_matched:
+                                            continue
+                                    # If no country rates specified, use default rate
+                                    elif not default_rate:
+                                        continue
+                                    
+                                    count_value = record.get('count', 0)
+                                    account_filtered_settlements.append({
+                                        'record': record,
+                                        'date': record_date,
+                                        'country': country,
+                                        'count': count_value,
+                                        'account_name': account_name
+                                    })
+                                    
+                                except Exception as e:
+                                    print(f"❌ Error processing record: {e}")
+                                    continue
+                        
+                        if account_filtered_settlements:
+                            print(f"✅ Account {account_name} has {len(account_filtered_settlements)} settlements")
                             
-                            count_value = record.get('count', 0)
-                            user_filtered_settlements.append({
-                                'record': record,
-                                'date': record_date,
-                                'country': country,
-                                'count': count_value
+                            # Calculate account totals
+                            for item in account_filtered_settlements:
+                                country = item['country']
+                                count = item['count']
+                                
+                                # Add to user totals
+                                if country not in user_country_totals:
+                                    user_country_totals[country] = 0
+                                user_country_totals[country] += count
+                                
+                                user_total_count += count
+                                user_all_filtered_settlements.append(item)
+                            
+                            user_accounts_with_settlements.append({
+                                'account_name': account_name,
+                                'username': account_username,
+                                'settlement_count': len(account_filtered_settlements),
+                                'total_count': sum(item['count'] for item in account_filtered_settlements)
                             })
                             
-                        except Exception as e:
-                            print(f"❌ Error processing record: {e}")
-                            continue
-                
-                if user_filtered_settlements:
-                    users_with_settlements += 1
-                    
-                    for item in user_filtered_settlements:
-                        country = item['country']
-                        if country not in country_totals:
-                            country_totals[country] = 0
-                        country_totals[country] += item['count']
-                    
-                    total_count = sum(country_totals.values())
-                    
-                    # Calculate earnings based on country rates
-                    for country, count in country_totals.items():
-                        if country_rates:
-                            # Find matching country rate
-                            rate = default_rate
-                            for target_country, target_rate in country_rates.items():
-                                if target_country.lower() in country.lower() or country.lower() in target_country.lower():
-                                    rate = target_rate
-                                    break
-                        else:
-                            rate = default_rate
-                        
-                        total_usd_user += count * rate
-                    
-                    total_personal_count += total_count
-                    print(f"✅ User has settlements: {total_count} counts = ${total_usd_user:.2f}")
-                    print(f"  Country breakdown: {country_totals}")
+                    except Exception as e:
+                        print(f"❌ Error processing account {account_name}: {type(e).__name__}: {e}")
+                        continue
+            
+            # Calculate user's personal USD from all accounts
+            user_personal_usd = 0
+            for country, count in user_country_totals.items():
+                if country_rates:
+                    # Find matching country rate
+                    rate = default_rate
+                    for target_country, target_rate in country_rates.items():
+                        if target_country.lower() in country.lower() or country.lower() in target_country.lower():
+                            rate = target_rate
+                            break
                 else:
-                    print(f"⚠️ User {username} has no settlements on {target_date}")
+                    rate = default_rate
                 
-                # ২. ফ্রেন্ডদের কমিশন যোগ করা
-                commission_rate = 0.002
-                total_commission = 0
-                friends_details = []
+                user_personal_usd += count * rate
+            
+            total_personal_count += user_total_count
+            
+            # ২. ফ্রেন্ডদের কমিশন যোগ করা (একই আগের লজিক)
+            commission_rate = 0.002
+            total_commission = 0
+            friends_details = []
+            
+            # ফ্রেন্ড ডেটা চেক করা (প্রথম অ্যাকাউন্ট থেকে নেওয়া)
+            friends_list = []
+            for acc in user_accounts:
+                if isinstance(acc, dict) and 'friends' in acc and isinstance(acc['friends'], list):
+                    friends_list = acc['friends']
+                    print(f"👥 Found {len(friends_list)} friends for {username}")
+                    break
+            
+            total_friends_count += len(friends_list)
+            
+            # প্রতিটি ফ্রেন্ডের জন্য কমিশন ক্যালকুলেশন
+            for friend_data in friends_list:
+                friend_user_id = None
                 
-                # ফ্রেন্ড ডেটা চেক করা
-                friends_list = []
-                for acc in user_accounts:
-                    if isinstance(acc, dict) and 'friends' in acc and isinstance(acc['friends'], list):
-                        friends_list = acc['friends']
-                        print(f"👥 Found {len(friends_list)} friends for {username}")
+                if isinstance(friend_data, dict) and 'user_id' in friend_data:
+                    friend_user_id = str(friend_data['user_id'])
+                elif isinstance(friend_data, str):
+                    friend_user_id = str(friend_data)
+                else:
+                    continue
+                
+                print(f"🔍 Processing friend: {friend_user_id}")
+                
+                friend_found = False
+                actual_friend_id = None
+                
+                for acc_key in accounts.keys():
+                    if str(acc_key) == str(friend_user_id):
+                        actual_friend_id = acc_key
+                        friend_found = True
                         break
                 
-                total_friends_count += len(friends_list)
+                if not friend_found:
+                    print(f"❌ Friend {friend_user_id} not found in accounts")
+                    continue
                 
-                # প্রতিটি ফ্রেন্ডের জন্য কমিশন ক্যালকুলেশন
-                for friend_data in friends_list:
-                    friend_user_id = None
-                    
-                    if isinstance(friend_data, dict) and 'user_id' in friend_data:
-                        friend_user_id = str(friend_data['user_id'])
-                    elif isinstance(friend_data, str):
-                        friend_user_id = str(friend_data)
-                    else:
+                if actual_friend_id and actual_friend_id in accounts:
+                    friend_accounts_data = accounts[actual_friend_id]
+                    if not isinstance(friend_accounts_data, dict):
                         continue
-                    
-                    print(f"🔍 Processing friend: {friend_user_id}")
-                    
-                    friend_found = False
-                    actual_friend_id = None
-                    
-                    for acc_key in accounts.keys():
-                        if str(acc_key) == str(friend_user_id):
-                            actual_friend_id = acc_key
-                            friend_found = True
-                            break
-                    
-                    if not friend_found:
-                        print(f"❌ Friend {friend_user_id} not found in accounts")
+                        
+                    friend_accounts = friend_accounts_data.get("accounts", [])
+                    if not friend_accounts:
                         continue
+                        
+                    friend_api_id = friend_accounts[0].get('api_user_id') if friend_accounts else None
+                    friend_username = friend_accounts[0].get('username', 'Unknown') if friend_accounts else 'Unknown'
+                    friend_telegram_username = friend_accounts[0].get('telegram_username', '') if friend_accounts else ''
                     
-                    if actual_friend_id and actual_friend_id in accounts:
-                        friend_accounts_data = accounts[actual_friend_id]
-                        if not isinstance(friend_accounts_data, dict):
-                            continue
-                            
-                        friend_accounts = friend_accounts_data.get("accounts", [])
-                        if not friend_accounts:
-                            continue
-                            
-                        friend_api_id = friend_accounts[0].get('api_user_id') if friend_accounts else None
-                        friend_username = friend_accounts[0].get('username', 'Unknown') if friend_accounts else 'Unknown'
-                        friend_telegram_username = friend_accounts[0].get('telegram_username', '') if friend_accounts else ''
+                    # ফ্রেন্ডের জন্য supervisor হিসেবে বর্তমান ইউজারকে সেট করা
+                    user_under_supervisors[actual_friend_id] = {
+                        'name': username,
+                        'telegram_username': telegram_username,
+                        'user_id': user_id_str
+                    }
+                    
+                    print(f"✅ Processing friend: {friend_username} (API: {friend_api_id})")
+                    
+                    # ফ্রেন্ডের settlement ডেটা fetch করা (ফ্রেন্ডের সব অ্যাকাউন্ট থেকে)
+                    friend_total_count = 0
+                    friend_countries = []
+                    
+                    # Process friend's all accounts
+                    for friend_acc in friend_accounts:
+                        friend_acc_token = None
+                        friend_acc_api_id = friend_acc.get('api_user_id')
                         
-                        # ফ্রেন্ডের জন্য supervisor হিসেবে বর্তমান ইউজারকে সেট করা
-                        user_under_supervisors[actual_friend_id] = {
-                            'name': username,
-                            'telegram_username': telegram_username,
-                            'user_id': user_id_str
-                        }
+                        if friend_acc.get('token'):
+                            async with aiohttp.ClientSession() as token_session:
+                                status_code, _, _ = await get_status_async(token_session, friend_acc['token'], "0000000000")
+                            if status_code != -1:
+                                friend_acc_token = friend_acc['token']
                         
-                        print(f"✅ Processing friend: {friend_username} (API: {friend_api_id})")
+                        if not friend_acc_token:
+                            if friend_acc.get('active', True):
+                                token, api_id, nickname = await login_api_async(friend_acc['username'], friend_acc['password'])
+                                if token:
+                                    friend_acc_token = token
+                                    friend_acc['token'] = token
+                                    if api_id:
+                                        friend_acc['api_user_id'] = api_id
+                                    friend_acc['nickname'] = nickname
+                                    friend_acc['last_login'] = datetime.now().isoformat()
                         
-                        # ফ্রেন্ডের settlement ডেটা fetch করা
-                        friend_token = None
-                        
-                        try:
-                            for acc in friend_accounts:
-                                if acc.get('token'):
-                                    async with aiohttp.ClientSession() as token_session:
-                                        status_code, _, _ = await get_status_async(token_session, acc['token'], "0000000000")
-                                    if status_code != -1:
-                                        friend_token = acc['token']
-                                        break
-                        except:
-                            pass
-                        
-                        if not friend_token:
-                            for acc in friend_accounts:
-                                if acc.get('active', True):
-                                    token, api_id, nickname = await login_api_async(acc['username'], acc['password'])
-                                    if token:
-                                        friend_token = token
-                                        acc['token'] = token
-                                        if api_id:
-                                            acc['api_user_id'] = api_id
-                                        acc['nickname'] = nickname
-                                        acc['last_login'] = datetime.now().isoformat()
-                                        break
-                        
-                        if friend_token and friend_api_id:
+                        if friend_acc_token and friend_acc_api_id:
                             try:
                                 async with aiohttp.ClientSession() as friend_session:
                                     friend_settlement_data, error = await get_user_settlements(
-                                        friend_session, friend_token, str(friend_api_id), page=1, page_size=100
+                                        friend_session, friend_acc_token, str(friend_acc_api_id), page=1, page_size=100
                                     )
                                     
                                     if error:
@@ -2982,10 +3001,6 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                         continue
                                     
                                     if friend_settlement_data and friend_settlement_data.get('records'):
-                                        friend_filtered_count = 0
-                                        friend_countries = []
-                                        friend_earnings = 0
-                                        
                                         for record in friend_settlement_data.get('records', []):
                                             gmt_create = record.get('gmtCreate')
                                             if not gmt_create:
@@ -3022,110 +3037,104 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                                     continue
                                                 
                                                 count = record.get('count', 0)
-                                                friend_filtered_count += count
-                                                
-                                                # Calculate earnings based on country rates
-                                                if country_rates:
-                                                    # Find matching country rate
-                                                    rate = default_rate
-                                                    for target_country, target_rate in country_rates.items():
-                                                        if target_country.lower() in country.lower() or country.lower() in target_country.lower():
-                                                            rate = target_rate
-                                                            break
-                                                else:
-                                                    rate = default_rate
-                                                
-                                                friend_earnings += count * rate
+                                                friend_total_count += count
                                                 
                                                 if country not in friend_countries:
                                                     friend_countries.append(country)
                                                     
                                             except Exception as e:
                                                 continue
-                                        
-                                        print(f"📈 Friend {friend_username} filtered count for target countries: {friend_filtered_count}")
-                                        
-                                        if friend_filtered_count >= 1:
-                                            friend_commission = friend_filtered_count * commission_rate
-                                            total_commission += friend_commission
-                                            total_friend_counts += friend_filtered_count
-                                            total_eligible_friends += 1
-                                            
-                                            friend_name = "Unknown"
-                                            if isinstance(friend_data, dict) and 'name' in friend_data:
-                                                friend_name = friend_data['name']
-                                            elif friend_accounts and friend_accounts[0].get('nickname'):
-                                                friend_name = friend_accounts[0].get('nickname')
-                                            elif friend_accounts and friend_accounts[0].get('username'):
-                                                friend_name = friend_accounts[0].get('username')
-                                            
-                                            friends_details.append({
-                                                'name': friend_name,
-                                                'username': friend_username,
-                                                'telegram_username': friend_telegram_username,
-                                                'accounts': len(friend_accounts),
-                                                'counts': friend_filtered_count,
-                                                'commission': friend_commission,
-                                                'countries': friend_countries,
-                                                'earnings': friend_earnings,
-                                                'friend_user_id': actual_friend_id
-                                            })
-                                            
-                                            print(f"✅ Friend commission added: {friend_name} - ${friend_commission:.2f} from {friend_filtered_count} counts")
-                                        else:
-                                            print(f"⚠️ Friend {friend_username} has only {friend_filtered_count} counts in target countries (needs 10)")
-                                    else:
-                                        print(f"⚠️ No settlement records found for friend {friend_username}")
                             except Exception as e:
                                 print(f"❌ Friend calculation error: {type(e).__name__}: {e}")
                                 continue
-                
-                # ৩. টোটাল ক্যালকুলেশন করা
-                total_usd_with_commission = total_usd_user + total_commission
-                total_bdt_user = total_usd_with_commission * USD_TO_BDT
-                
-                print(f"💰 Final calculation for {username}:")
-                print(f"  Personal: ${total_usd_user:.2f}")
-                print(f"  Commission: ${total_commission:.2f}")
-                print(f"  Total USD: ${total_usd_with_commission:.2f}")
-                print(f"  Total BDT: {total_bdt_user:.2f}")
-                
-                if total_commission > 0 and total_count == 0:
-                    users_with_only_commission += 1
-                    print(f"👥 User {username} has only commission: ${total_commission:.2f}")
-                
-                # Check if user has any earnings
-                has_earnings = total_usd_user > 0 or total_commission > 0
-                
-                if has_earnings:
-                    users_with_earnings += 1
+                    
+                    print(f"📈 Friend {friend_username} total filtered count for target countries: {friend_total_count}")
+                    
+                    if friend_total_count >= 1:
+                        friend_commission = friend_total_count * commission_rate
+                        total_commission += friend_commission
+                        total_friend_counts += friend_total_count
+                        total_eligible_friends += 1
+                        
+                        friend_name = "Unknown"
+                        if isinstance(friend_data, dict) and 'name' in friend_data:
+                            friend_name = friend_data['name']
+                        elif friend_accounts and friend_accounts[0].get('nickname'):
+                            friend_name = friend_accounts[0].get('nickname')
+                        elif friend_accounts and friend_accounts[0].get('username'):
+                            friend_name = friend_accounts[0].get('username')
+                        
+                        # Calculate friend earnings
+                        friend_earnings = 0
+                        if friend_total_count > 0:
+                            # Simplified calculation - you might need to adjust based on friend's countries
+                            friend_rate = default_rate if default_rate else 0.10
+                            friend_earnings = friend_total_count * friend_rate
+                        
+                        friends_details.append({
+                            'name': friend_name,
+                            'username': friend_username,
+                            'telegram_username': friend_telegram_username,
+                            'accounts': len(friend_accounts),
+                            'counts': friend_total_count,
+                            'commission': friend_commission,
+                            'countries': friend_countries,
+                            'earnings': friend_earnings,
+                            'friend_user_id': actual_friend_id
+                        })
+                        
+                        print(f"✅ Friend commission added: {friend_name} - ${friend_commission:.2f} from {friend_total_count} counts")
+                    else:
+                        print(f"⚠️ Friend {friend_username} has only {friend_total_count} counts in target countries (needs 10)")
                 else:
-                    users_without_earnings += 1
-                    print(f"ℹ️ User {username} has no earnings, skipping from report")
-                    continue
+                    print(f"⚠️ No settlement records found for friend {friend_username}")
+            
+            # ৩. টোটাল ক্যালকুলেশন করা
+            total_usd_with_commission = user_personal_usd + total_commission
+            total_bdt_user = total_usd_with_commission * USD_TO_BDT
+            
+            print(f"💰 Final calculation for {username} (ALL ACCOUNTS):")
+            print(f"  Accounts with settlements: {len(user_accounts_with_settlements)}")
+            print(f"  Personal counts: {user_total_count}")
+            print(f"  Personal USD: ${user_personal_usd:.2f}")
+            print(f"  Commission: ${total_commission:.2f}")
+            print(f"  Total USD: ${total_usd_with_commission:.2f}")
+            print(f"  Total BDT: {total_bdt_user:.2f}")
+            
+            if total_commission > 0 and user_total_count == 0:
+                users_with_only_commission += 1
+                print(f"👥 User {username} has only commission: ${total_commission:.2f}")
+            
+            # Check if user has any earnings
+            has_earnings = user_personal_usd > 0 or total_commission > 0
+            
+            if has_earnings:
+                users_with_earnings += 1
                 
                 user_summary = {
                     'user_id': user_id_str,
                     'username': username,
                     'telegram_username': telegram_username,
-                    'api_user_id': api_user_id,
                     'settlement_date': target_date_display,
-                    'countries': list(country_totals.keys()),
-                    'country_totals': country_totals,
-                    'total_count': total_count,
-                    'personal_usd': total_usd_user,
+                    'countries': list(user_country_totals.keys()),
+                    'country_totals': user_country_totals,
+                    'total_count': user_total_count,
+                    'personal_usd': user_personal_usd,
                     'total_commission': total_commission,
                     'friends_details': friends_details,
                     'total_usd': total_usd_with_commission,
                     'total_bdt': total_bdt_user,
-                    'num_records': len(user_filtered_settlements),
-                    'token_refreshed': token_refreshed,
-                    'has_personal_settlement': len(user_filtered_settlements) > 0,
+                    'num_records': len(user_all_filtered_settlements),
+                    'token_refreshed': users_token_refreshed,
+                    'has_personal_settlement': len(user_all_filtered_settlements) > 0,
                     'friend_counts': sum(f['counts'] for f in friends_details),
-                    'total_counts': total_count + sum(f['counts'] for f in friends_details),
+                    'total_counts': user_total_count + sum(f['counts'] for f in friends_details),
                     'has_earnings': has_earnings,
                     'in_friends_list': user_id_str in users_in_friends_lists,
-                    'friends_list': friends_details
+                    'friends_list': friends_details,
+                    'accounts_with_settlements': user_accounts_with_settlements,
+                    'total_accounts': len(user_accounts),
+                    'active_accounts': len([acc for acc in user_accounts if acc.get('active', True)])
                 }
                 
                 all_users_summary.append(user_summary)
@@ -3133,12 +3142,14 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 total_usd += total_usd_with_commission
                 total_bdt += total_bdt_user
                 
-                print(f"✅ User {username} added to summary")
+                print(f"✅ User {username} added to summary (from {len(user_accounts_with_settlements)} accounts)")
                 
-            except Exception as e:
-                print(f"❌ User {user_id_str} processing error: {type(e).__name__}: {e}")
-                users_failed += 1
-                continue
+            else:
+                users_without_earnings += 1
+                print(f"ℹ️ User {username} has no earnings, skipping from report")
+        
+        # Save updated accounts (with refreshed tokens)
+        save_accounts(accounts)
         
         # Update settings with the first rate (for backward compatibility)
         if default_rate:
@@ -3167,7 +3178,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         print(f"• Total USD: ${total_usd:.2f}")
         print(f"• Total BDT: {total_bdt:.2f}")
         
-        # আগের notification সিস্টেম (original)
+        # আগের notification সিস্টেম (original) - ইউপডেট করা
         notified_users = 0
         for user_summary in all_users_summary:
             try:
@@ -3201,7 +3212,12 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 
                 message += f"• 💱 Exchange Rate: 1 USD = {USD_TO_BDT} BDT\n\n"
                 
-                message += "📊 Your Performance:\n"
+                message += "📊 Your Performance (All Accounts):\n"
+                
+                # Show account breakdown
+                if user_summary.get('accounts_with_settlements'):
+                    message += f"• 📱 Active Accounts: {user_summary['active_accounts']}\n"
+                    message += f"• ✅ Accounts with Settlements: {len(user_summary['accounts_with_settlements'])}\n\n"
                 
                 # Country breakdown for personal counts
                 if user_summary['country_totals']:
@@ -3209,17 +3225,17 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                         country = list(user_summary['country_totals'].keys())[0]
                         count = user_summary['country_totals'][country]
                         rate = country_rates.get(country, display_rate) if country_rates else display_rate
-                        message += f"• Your Account: {count} counts ({country})\n"
+                        message += f"• Your Total Counts: {count} counts ({country})\n"
                         message += f"• Your USD: ${user_summary['personal_usd']:.2f} ({count} × ${rate:.3f})\n\n"
                     else:
-                        message += f"• Your Account: {user_summary['total_count']} counts\n"
+                        message += f"• Your Total Counts: {user_summary['total_count']} counts\n"
                         for country, count in user_summary['country_totals'].items():
                             rate = country_rates.get(country, display_rate) if country_rates else display_rate
                             country_usd = count * rate
                             message += f"  └─ {country}: {count} counts (${country_usd:.2f})\n"
                         message += f"• Your USD: ${user_summary['personal_usd']:.2f}\n\n"
                 else:
-                    message += f"• Your Account: {user_summary['total_count']} counts\n"
+                    message += f"• Your Total Counts: {user_summary['total_count']} counts\n"
                     message += f"• Your USD: ${user_summary['personal_usd']:.2f} ({user_summary['total_count']} × ${display_rate:.3f})\n\n"
                 
                 # ফ্রেন্ড কমিশন থাকলে
@@ -3514,7 +3530,11 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                 
                 user_data = accounts.get(user_summary['user_id'], {})
                 user_accounts_count = len(user_data.get("accounts", [])) if isinstance(user_data, dict) else 0
-                user_message += f"├─ 📱 Accounts: {user_accounts_count}\n"
+                user_message += f"├─ 📱 Total Accounts: {user_accounts_count}\n"
+                user_message += f"├─ ✅ Active Accounts: {user_summary['active_accounts']}\n"
+                
+                if user_summary.get('accounts_with_settlements'):
+                    user_message += f"├─ 💰 Accounts with Settlements: {len(user_summary['accounts_with_settlements'])}\n"
                 
                 if len(user_summary['countries']) == 1:
                     user_message += f"├─ 🌍 Country: {user_summary['countries'][0]}\n"
