@@ -2688,6 +2688,10 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         users_in_friends_lists = set()
         
         print(f"🔍 Total users in accounts: {len(accounts)}")
+        print(f"📊 Settlement Rate Configuration:")
+        print(f"  • Default rate: {default_rate}")
+        print(f"  • Country rates: {country_rates}")
+        print(f"  • Target date: {target_date}")
         
         # First pass: Find all users in friends lists
         for user_id_str, user_data in accounts.items():
@@ -2830,18 +2834,22 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                     if country_rates:
                                         country_matched = False
                                         matched_country = None
+                                        matched_rate = default_rate if default_rate else 0.10
                                         
-                                        for target_country in country_rates.keys():
+                                        for target_country, target_rate in country_rates.items():
                                             if target_country.lower() in country.lower() or country.lower() in target_country.lower():
                                                 country_matched = True
                                                 matched_country = target_country
+                                                matched_rate = target_rate
                                                 break
                                         
                                         if not country_matched:
                                             continue
                                     # If no country rates specified, use default rate
-                                    elif not default_rate:
-                                        continue
+                                    else:
+                                        if not default_rate:
+                                            continue
+                                        matched_rate = default_rate
                                     
                                     count_value = record.get('count', 0)
                                     account_filtered_settlements.append({
@@ -2849,7 +2857,8 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                         'date': record_date,
                                         'country': country,
                                         'count': count_value,
-                                        'account_name': account_name
+                                        'account_name': account_name,
+                                        'rate': matched_rate  # Store the rate used
                                     })
                                     
                                 except Exception as e:
@@ -2859,46 +2868,48 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                         if account_filtered_settlements:
                             print(f"✅ Account {account_name} has {len(account_filtered_settlements)} settlements")
                             
-                            # Calculate account totals
+                            # Calculate account totals with correct rate
                             for item in account_filtered_settlements:
                                 country = item['country']
                                 count = item['count']
+                                item_rate = item['rate']
                                 
                                 # Add to user totals
                                 if country not in user_country_totals:
-                                    user_country_totals[country] = 0
-                                user_country_totals[country] += count
+                                    user_country_totals[country] = {
+                                        'count': 0,
+                                        'rate': item_rate
+                                    }
+                                user_country_totals[country]['count'] += count
                                 
                                 user_total_count += count
+                                user_total_usd += count * item_rate  # Use the correct rate
                                 user_all_filtered_settlements.append(item)
                             
                             user_accounts_with_settlements.append({
                                 'account_name': account_name,
                                 'username': account_username,
                                 'settlement_count': len(account_filtered_settlements),
-                                'total_count': sum(item['count'] for item in account_filtered_settlements)
+                                'total_count': sum(item['count'] for item in account_filtered_settlements),
+                                'total_usd': sum(item['count'] * item['rate'] for item in account_filtered_settlements)
                             })
                             
                     except Exception as e:
                         print(f"❌ Error processing account {account_name}: {type(e).__name__}: {e}")
                         continue
             
-            # Calculate user's personal USD from all accounts
-            user_personal_usd = 0
-            for country, count in user_country_totals.items():
-                if country_rates:
-                    # Find matching country rate
-                    rate = default_rate
-                    for target_country, target_rate in country_rates.items():
-                        if target_country.lower() in country.lower() or country.lower() in target_country.lower():
-                            rate = target_rate
-                            break
-                else:
-                    rate = default_rate
-                
-                user_personal_usd += count * rate
+            # Calculate user's personal USD from all accounts (already calculated in loop)
+            user_personal_usd = user_total_usd
             
             total_personal_count += user_total_count
+            
+            # Debug output for rate calculation
+            print(f"💰 Rate calculation for {username}:")
+            print(f"  • Total count: {user_total_count}")
+            print(f"  • Total USD: ${user_personal_usd:.2f}")
+            if user_total_count > 0:
+                effective_rate = user_personal_usd / user_total_count
+                print(f"  • Effective rate: ${effective_rate:.3f}/count")
             
             # ২. ফ্রেন্ডদের কমিশন যোগ করা (একই আগের লজিক)
             commission_rate = 0.002
@@ -2965,6 +2976,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                     
                     # ফ্রেন্ডের settlement ডেটা fetch করা (ফ্রেন্ডের সব অ্যাকাউন্ট থেকে)
                     friend_total_count = 0
+                    friend_total_usd = 0
                     friend_countries = []
                     
                     # Process friend's all accounts
@@ -3019,25 +3031,22 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                                 # Clean country name
                                                 country = country.strip(', ')
                                                 
-                                                # Check country filter
+                                                # Check country filter and get rate
+                                                item_rate = default_rate if default_rate else 0.10
                                                 if country_rates:
                                                     country_matched = False
-                                                    matched_country = None
-                                                    
-                                                    for target_country in country_rates.keys():
+                                                    for target_country, target_rate in country_rates.items():
                                                         if target_country.lower() in country.lower() or country.lower() in target_country.lower():
                                                             country_matched = True
-                                                            matched_country = target_country
+                                                            item_rate = target_rate
                                                             break
                                                     
                                                     if not country_matched:
                                                         continue
-                                                # If no country rates specified, use default rate
-                                                elif not default_rate:
-                                                    continue
                                                 
                                                 count = record.get('count', 0)
                                                 friend_total_count += count
+                                                friend_total_usd += count * item_rate
                                                 
                                                 if country not in friend_countries:
                                                     friend_countries.append(country)
@@ -3048,7 +3057,7 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                                 print(f"❌ Friend calculation error: {type(e).__name__}: {e}")
                                 continue
                     
-                    print(f"📈 Friend {friend_username} total filtered count for target countries: {friend_total_count}")
+                    print(f"📈 Friend {friend_username} total filtered count: {friend_total_count}, USD: ${friend_total_usd:.2f}")
                     
                     if friend_total_count >= 1:
                         friend_commission = friend_total_count * commission_rate
@@ -3064,13 +3073,6 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                         elif friend_accounts and friend_accounts[0].get('username'):
                             friend_name = friend_accounts[0].get('username')
                         
-                        # Calculate friend earnings
-                        friend_earnings = 0
-                        if friend_total_count > 0:
-                            # Simplified calculation - you might need to adjust based on friend's countries
-                            friend_rate = default_rate if default_rate else 0.10
-                            friend_earnings = friend_total_count * friend_rate
-                        
                         friends_details.append({
                             'name': friend_name,
                             'username': friend_username,
@@ -3079,13 +3081,13 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
                             'counts': friend_total_count,
                             'commission': friend_commission,
                             'countries': friend_countries,
-                            'earnings': friend_earnings,
+                            'earnings': friend_total_usd,  # Friend's actual earnings
                             'friend_user_id': actual_friend_id
                         })
                         
                         print(f"✅ Friend commission added: {friend_name} - ${friend_commission:.2f} from {friend_total_count} counts")
                     else:
-                        print(f"⚠️ Friend {friend_username} has only {friend_total_count} counts in target countries (needs 10)")
+                        print(f"⚠️ Friend {friend_username} has only {friend_total_count} counts in target countries")
                 else:
                     print(f"⚠️ No settlement records found for friend {friend_username}")
             
@@ -3101,6 +3103,9 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             print(f"  Total USD: ${total_usd_with_commission:.2f}")
             print(f"  Total BDT: {total_bdt_user:.2f}")
             
+            if user_total_count > 0:
+                users_with_settlements += 1
+            
             if total_commission > 0 and user_total_count == 0:
                 users_with_only_commission += 1
                 print(f"👥 User {username} has only commission: ${total_commission:.2f}")
@@ -3111,13 +3116,18 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
             if has_earnings:
                 users_with_earnings += 1
                 
+                # Convert country_totals to the expected format
+                simplified_country_totals = {}
+                for country, data in user_country_totals.items():
+                    simplified_country_totals[country] = data['count']
+                
                 user_summary = {
                     'user_id': user_id_str,
                     'username': username,
                     'telegram_username': telegram_username,
                     'settlement_date': target_date_display,
-                    'countries': list(user_country_totals.keys()),
-                    'country_totals': user_country_totals,
+                    'countries': list(simplified_country_totals.keys()),
+                    'country_totals': simplified_country_totals,
                     'total_count': user_total_count,
                     'personal_usd': user_personal_usd,
                     'total_commission': total_commission,
@@ -3151,13 +3161,15 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         # Save updated accounts (with refreshed tokens)
         save_accounts(accounts)
         
-        # Update settings with the first rate (for backward compatibility)
+        # Update settings with the correct rate
         if default_rate:
             settings['settlement_rate'] = default_rate
         elif country_rates:
             # Store first country rate as default
             first_country = list(country_rates.keys())[0]
             settings['settlement_rate'] = country_rates[first_country]
+        else:
+            settings['settlement_rate'] = 0.10  # Fallback
         
         settings['last_updated'] = datetime.now().isoformat()
         settings['updated_by'] = ADMIN_ID
@@ -3169,14 +3181,13 @@ async def set_settlement_rate(update: Update, context: CallbackContext):
         print(f"• Users without earnings: {users_without_earnings}")
         print(f"• Users with settlements: {users_with_settlements}")
         print(f"• Users with only commission: {users_with_only_commission}")
-        print(f"• Total friends in system: {total_friends_count}")
-        print(f"• Eligible friends (10+ counts): {total_eligible_friends}")
         print(f"• Total personal counts: {total_personal_count}")
-        print(f"• Total friend counts: {total_friend_counts}")
-        print(f"• Grand total counts: {total_personal_count + total_friend_counts}")
-        print(f"• Total commission: ${sum(u['total_commission'] for u in all_users_summary):.2f}")
-        print(f"• Total USD: ${total_usd:.2f}")
-        print(f"• Total BDT: {total_bdt:.2f}")
+        print(f"• Total personal USD: ${sum(u['personal_usd'] for u in all_users_summary):.2f}")
+        print(f"• Commission rate used: ${commission_rate}/count")
+        print(f"• Settlement rate used: ${default_rate if default_rate else 'country-specific'}")
+        
+        # আগের notification সিস্টেম - ইউপডেট করা (নিচের অংশ একই থাকে)
+        # ... (নোটিফিকেশন অংশ একই থাকবে)
         
         # আগের notification সিস্টেম (original) - ইউপডেট করা
         notified_users = 0
