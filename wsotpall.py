@@ -96,8 +96,8 @@ async def health():
 # Enhanced keep-alive system for Render
 async def keep_alive_enhanced():
     keep_alive_urls = [
-        "https://wsotpall-me2m.onrender.com",
-        "https://autoping-kaxn.onrender.com"
+        "https://wsotpall-44yx.onrender.com",
+        "https://autoping-so5w.onrender.com"
     ]
     
     while True:
